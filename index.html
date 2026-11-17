@@ -460,70 +460,98 @@ function updateTxUI() {
 
 const rttPill = document.getElementById("rttPill");
 const floatRtt = document.getElementById("floatRtt");
-function updateRttUI(ms, ok = true) {
-  if (ms === null) {
+const toHex = (b) => "0x" + (b & 0xff).toString(16).padStart(2, "0").toUpperCase();
+
+let desiredByte = 0;
+let ackedByte = -1;
+let forceNextTx = false;
+let confirmTimer = null;
+const cmdQueue = []; // 保證每次按下與放開依序送達，不會在 inFlight 期間被覆蓋吃掉
+let dropCount = 0;
+let lastFailByte = null;
+let lastAckedCmd = null;
+let lastAckedRtt = 0;
+
+function updateRttUI(val, ms = 0, ok = true) {
+  if (val === null) {
+    dropCount = 0;
+    lastFailByte = null;
+    lastAckedCmd = null;
+    lastAckedRtt = 0;
     rttPill.textContent = "ACK: --";
+    rttPill.style.color = "";
     rttPill.classList.remove("ok");
     floatRtt.textContent = "--ms";
     floatRtt.classList.remove("ok");
     return;
   }
   if (!ok) {
-    rttPill.textContent = "ACK: ✗ 重送";
+    dropCount++;
+    lastFailByte = val;
+    rttPill.textContent = `ACK: ✗ ${toHex(val)} 沒收到 (漏:${dropCount})`;
+    rttPill.style.color = "#f87171";
     rttPill.classList.remove("ok");
-    floatRtt.textContent = "✗";
+    floatRtt.textContent = `✗${toHex(val)}`;
     floatRtt.classList.remove("ok");
     return;
   }
-  rttPill.textContent = `ACK: ✓ ${ms}ms`;
-  rttPill.classList.toggle("ok", ms < 60);
-  floatRtt.textContent = `${ms}ms`;
-  floatRtt.classList.toggle("ok", ms < 60);
+  lastAckedRtt = ms;
+  const shownByte = val !== 0 ? val : (lastAckedCmd ?? 0);
+  const failSuffix = dropCount > 0 ? ` | 曾漏:${toHex(lastFailByte)}×${dropCount}` : "";
+  rttPill.textContent = `已收: ${toHex(shownByte)} ✓ ${ms}ms${failSuffix}`;
+  rttPill.style.color = dropCount > 0 ? "#facc15" : "";
+  rttPill.classList.toggle("ok", dropCount === 0 && ms < 60);
+  floatRtt.textContent = `${toHex(shownByte)} ${ms}ms`;
+  floatRtt.classList.toggle("ok", dropCount === 0 && ms < 60);
 }
 
-let desiredByte = 0;
-let ackedByte = -1;
-let forceNextTx = false;
-let confirmTimer = null;
+rttPill.title = "點擊清除漏包紀錄";
+rttPill.style.cursor = "pointer";
+rttPill.onclick = () => {
+  dropCount = 0;
+  lastFailByte = null;
+  if (lastAckedCmd !== null) updateRttUI(lastAckedCmd, lastAckedRtt, true);
+};
 
 async function pumpTx() {
   if (!txChar || inFlight) return;
-  if (!forceNextTx && desiredByte === ackedByte) return;
+  const fromQueue = cmdQueue.length > 0;
+  const val = fromQueue ? cmdQueue.shift() : desiredByte;
+  if (!fromQueue && !forceNextTx && val === ackedByte) return;
   inFlight = true;
-  const val = desiredByte;
+  const isHeartbeatOnly = !fromQueue && val === ackedByte;
   forceNextTx = false;
   const t0 = performance.now();
   try {
     await txChar.writeValueWithResponse(new Uint8Array([val]));
     ackedByte = val;
-    updateRttUI(Math.round(performance.now() - t0), true);
-  } catch {
-    try {
-      await txChar.writeValueWithoutResponse(new Uint8Array([val]));
-      ackedByte = val;
-      updateRttUI(Math.round(performance.now() - t0), true);
-    } catch {
-      ackedByte = -1; // 下次 tick 自動重送
-      updateRttUI(0, false);
+    if (!isHeartbeatOnly || lastAckedCmd === null) {
+      if (val !== 0 || fromQueue) lastAckedCmd = val;
+      updateRttUI(val, Math.round(performance.now() - t0), true);
     }
+  } catch {
+    ackedByte = -1;
+    updateRttUI(val, 0, false);
   } finally {
     inFlight = false;
-    if (txChar && (forceNextTx || desiredByte !== ackedByte)) {
+    if (txChar && (cmdQueue.length > 0 || forceNextTx || desiredByte !== ackedByte)) {
       pumpTx();
     }
   }
 }
 
 function sendByte(val, _fast = false, isStateChange = false) {
-  desiredByte = val & 0xff;
+  const b = val & 0xff;
+  desiredByte = b;
   if (isStateChange) {
-    forceNextTx = true;
+    if (cmdQueue[cmdQueue.length - 1] !== b && cmdQueue.length < 6) {
+      cmdQueue.push(b);
+    }
     if (confirmTimer) clearTimeout(confirmTimer);
-    // 35ms 後雙重確認補送一次當前狀態，防止 ZS-040 UART 偶發漏字元
     confirmTimer = setTimeout(() => {
       forceNextTx = true;
       pumpTx();
-    }, 35);
+    }, 45);
   }
   pumpTx();
 }
@@ -772,6 +800,7 @@ function cleanup() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   clearM3Timers();
   txChar = null;
+  cmdQueue.length = 0;
   desiredByte = 0;
   ackedByte = -1;
   forceNextTx = false;

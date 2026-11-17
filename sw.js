@@ -1,4 +1,4 @@
-const CACHE = "ptbc-a01-v9";
+const CACHE = "ptbc-a01-v10";
 const ASSETS = [
   "./",
   "./index.html",
