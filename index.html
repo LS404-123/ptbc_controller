@@ -157,25 +157,21 @@
       .pad-btn small { font-size: 10px; }
     }
 
-    /* 直向提示遮罩 */
-    .portrait-overlay {
-      display: none;
-      position: fixed; inset: 0; z-index: 9999;
-      background: rgba(13, 15, 20, 0.96);
-      color: var(--text);
-      flex-direction: column; align-items: center; justify-content: center;
-      text-align: center; padding: 24px; gap: 14px;
-    }
-    .portrait-overlay .rotate-icon {
-      font-size: 52px; line-height: 1;
-      animation: rotateHint 1.8s ease-in-out infinite;
-    }
-    @keyframes rotateHint {
-      0%, 100% { transform: rotate(0deg); }
-      50% { transform: rotate(-90deg); }
-    }
+    /* 直向螢幕時自動強制橫向旋轉整個介面（免提示旋轉） */
     @media (orientation: portrait) {
-      .portrait-overlay { display: flex; }
+      .app {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100dvh;
+        height: 100vw;
+        transform-origin: top left;
+        transform: rotate(90deg) translateY(-100%);
+      }
+      dialog {
+        transform: rotate(90deg);
+        width: min(88dvh, 520px);
+        max-height: 88vw;
+      }
     }
 
     /* 設定抽屜 */
@@ -222,14 +218,6 @@
   </div>
 
   <div class="stage" id="stage"></div>
-</div>
-
-<div class="portrait-overlay" id="portraitOverlay">
-  <div class="rotate-icon">📱</div>
-  <h2 style="margin:0;">請將裝置轉為橫向</h2>
-  <p style="margin:0; color:var(--muted); font-size:14px; max-width:280px;">
-    PTBC A01 雙手遙控介面專為橫向握持設計，請旋轉螢幕以開始操作。
-  </p>
 </div>
 
 <dialog id="settingsDialog">
