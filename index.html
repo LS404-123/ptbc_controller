@@ -543,7 +543,12 @@ async function pumpTx() {
   forceNextTx = false;
   const t0 = performance.now();
   try {
-    await txChar.writeValueWithResponse(new Uint8Array([val]));
+    const buf = new Uint8Array([val]);
+    if (txChar.writeValueWithResponse) {
+      await txChar.writeValueWithResponse(buf);
+    } else {
+      await txChar.writeValue(buf);
+    }
     ackedByte = val;
     if (!isHeartbeatOnly || lastAckedCmd === null) {
       if (val !== 0 || fromQueue) lastAckedCmd = val;
@@ -920,8 +925,15 @@ btnMode.onclick = () => {
 };
 
 document.getElementById("btnFull").onclick = () => {
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
-  else document.exitFullscreen().catch(() => {});
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (req) {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) req.call(el)?.catch?.(() => {});
+    else exit?.call(document)?.catch?.(() => {});
+  } else {
+    setTopbarHidden(true);
+  }
 };
 
 // 控制器設定 Dialog
