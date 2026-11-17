@@ -1,6 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="36" fill="#0d0f14"/>
-  <rect x="14" y="14" width="164" height="164" rx="28" fill="#171b24" stroke="#2563eb" stroke-width="6"/>
-  <text x="96" y="108" font-family="system-ui,sans-serif" font-size="56" font-weight="800" fill="#60a5fa" text-anchor="middle">PTBC</text>
-  <text x="96" y="144" font-family="monospace" font-size="22" font-weight="700" fill="#94a3b8" text-anchor="middle">BLE A01</text>
+  <rect width="192" height="192" rx="36" fill="#120b1e"/>
+  <rect x="8" y="8" width="176" height="176" rx="30" fill="#1b122b" stroke="#8b5cf6" stroke-width="5"/>
+  <path d="M40,66 L22,26 L66,48 Q96,34 126,48 L170,26 L152,66 Q172,98 160,132 Q146,166 96,168 Q46,166 32,132 Q20,98 40,66 Z" fill="#6d28d9"/>
+  <polygon points="50,78 84,92 56,102" fill="#ef4444"/>
+  <polygon points="142,78 108,92 136,102" fill="#ef4444"/>
+  <circle cx="71" cy="90" r="4" fill="#120b1e"/>
+  <circle cx="121" cy="90" r="4" fill="#120b1e"/>
+  <path d="M48,116 Q96,148 144,116 Q124,154 96,154 Q68,154 48,116 Z" fill="#f5f3ff"/>
+  <path d="M68,125 L68,145 M82,130 L82,151 M96,132 L96,153 M110,130 L110,151 M124,125 L124,145" stroke="#4c2b7a" stroke-width="3"/>
 </svg>
