@@ -30,6 +30,7 @@
       color: var(--text);
       font-family: system-ui, -apple-system, sans-serif;
       overflow: hidden; touch-action: none; user-select: none;
+      -webkit-user-select: none; -webkit-touch-callout: none;
     }
     .app {
       position: relative;
@@ -215,33 +216,47 @@
         transform-origin: top left;
         transform: rotate(90deg) translateY(-100%);
       }
-      dialog {
-        transform: rotate(90deg);
-        width: min(88dvh, 520px);
-        max-height: 88vw;
-      }
     }
 
-    /* 設定抽屜 */
-    dialog {
-      background: var(--panel); color: var(--text); border: 1px solid var(--border);
-      border-radius: 12px; padding: 14px; width: min(94vw, 560px); max-height: 88dvh; overflow-y: auto;
+    /* 設定抽屜（位於 .app 內，直向模式下會自動跟隨旋轉並完整鋪開） */
+    .settings-overlay {
+      position: absolute; inset: 0; z-index: 100;
+      background: rgba(10, 5, 20, 0.82); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px;
     }
-    dialog::backdrop { background: rgba(0,0,0,0.7); }
-    .map-row { display: grid; grid-template-columns: 110px 1fr 1fr; gap: 8px; align-items: center; margin: 8px 0; }
+    .settings-overlay[hidden] { display: none; }
+    .settings-panel {
+      background: #171026; color: var(--text); border: 1px solid var(--border);
+      border-radius: 12px; width: 100%; max-width: 720px; height: 100%; max-height: 100%;
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.7);
+    }
+    .settings-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 8px 12px; background: #211538; border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .settings-body {
+      flex: 1; overflow-y: auto; padding: 10px 12px;
+      touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start;
+    }
+    .settings-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .map-row { display: grid; grid-template-columns: 82px 1fr 1fr; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; }
     .m3-cfg-card {
       background: #11151d; border: 1px solid var(--border); border-radius: 10px;
-      padding: 10px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+      padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
     }
     .m3-cfg-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center;
     }
     .m3-cfg-grid label {
-      display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted);
+      display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); min-width: 0;
     }
     select, input[type="text"], input[type="number"] {
       background: #0d0f14; color: var(--text); border: 1px solid var(--border);
-      padding: 6px 8px; border-radius: 6px; font-size: 13px;
+      padding: 5px 7px; border-radius: 6px; font-size: 12px; min-width: 0; width: 100%;
     }
   </style>
 </head>
@@ -285,95 +300,100 @@
   </div>
 
   <div class="stage" id="stage"></div>
+
+  <div class="settings-overlay" id="settingsDialog" hidden>
+    <div class="settings-panel">
+      <div class="settings-header">
+        <strong style="font-size:15px;">控制器設定</strong>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button type="button" class="btn-sm" id="btnResetSettings">恢復預設</button>
+          <button type="button" class="btn-sm" id="btnCancelSettings">取消</button>
+          <button type="button" class="btn-sm primary" id="btnSaveSettings">儲存並關閉</button>
+        </div>
+      </div>
+      <div class="settings-body">
+        <div class="settings-col">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+            <input type="checkbox" id="chkPtOnly" style="width:18px; height:18px; flex-shrink:0;" />
+            <span><strong>僅掃描 PT 開頭裝置</strong> — 過濾賽場雜訊</span>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted);">
+            <span><strong style="color:var(--text);">背景圖樣</strong></span>
+            <select id="selBgArt">
+              <option value="gengar_art1.jpg">暗影幽靈（同人插畫 1）</option>
+              <option value="gengar_art2.png">紫霧紅眼（同人插畫 2）</option>
+              <option value="gengar_art3.png">深淵凝視（同人插畫 3）</option>
+              <option value="gengar_bg.png">經典立繪</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted);">
+            <span><strong style="color:var(--text);">右側機構按鈕</strong></span>
+            <select id="selAuxLayout">
+              <option value="m3m4">M3 (A+/A-) + M4（4 顆）</option>
+              <option value="m3">僅保留 M3（A+ / A- 2 顆）</option>
+              <option value="m3p">僅保留 M3 A+（單顆大按鈕）</option>
+            </select>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
+            <span>微動脈衝 (ms)：</span>
+            <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:84px;" />
+          </label>
+          <h4 style="margin:6px 0 2px; font-size:13px;">其他馬達 Bit 映射</h4>
+          <div id="mapRows"></div>
+        </div>
+
+        <div class="settings-col">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <h4 style="margin:0; font-size:13px;">M3 機構（A+ / A-）手動設定</h4>
+            <button type="button" class="btn-sm" id="btnSwapM3Bits" style="padding:4px 8px; font-size:12px;">⇄ 互換 A+/A-</button>
+          </div>
+          <div class="m3-cfg-card">
+            <strong style="font-size:12px;">M3 正轉 (A+)</strong>
+            <div class="m3-cfg-grid">
+              <label>按鈕名稱
+                <input type="text" id="m3pLabel" maxlength="20" placeholder="M3 正轉 (A+)" />
+              </label>
+              <label>Bit 腳位
+                <select id="m3pBit"></select>
+              </label>
+              <label>觸發模式
+                <select id="m3pMode">
+                  <option value="hold">按住動作 (Hold)</option>
+                  <option value="toggle">點一下鎖定 (Toggle)</option>
+                  <option value="pulse">定時脈衝 (Pulse)</option>
+                </select>
+              </label>
+              <label>脈衝時間 (ms)
+                <input type="number" id="m3pPulseMs" min="20" max="5000" step="10" />
+              </label>
+            </div>
+          </div>
+          <div class="m3-cfg-card">
+            <strong style="font-size:12px;">M3 反轉 (A-)</strong>
+            <div class="m3-cfg-grid">
+              <label>按鈕名稱
+                <input type="text" id="m3nLabel" maxlength="20" placeholder="M3 反轉 (A-)" />
+              </label>
+              <label>Bit 腳位
+                <select id="m3nBit"></select>
+              </label>
+              <label>觸發模式
+                <select id="m3nMode">
+                  <option value="hold">按住動作 (Hold)</option>
+                  <option value="toggle">點一下鎖定 (Toggle)</option>
+                  <option value="pulse">定時脈衝 (Pulse)</option>
+                </select>
+              </label>
+              <label>脈衝時間 (ms)
+                <input type="number" id="m3nPulseMs" min="20" max="5000" step="10" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
-
-<dialog id="settingsDialog">
-  <h3 style="margin:0 0 10px;">控制器設定</h3>
-  <div style="display:flex; flex-direction:column; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:12px;">
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-      <input type="checkbox" id="chkPtOnly" style="width:18px; height:18px;" />
-      <span><strong>僅掃描 PT 開頭裝置</strong> — 優先過濾賽場雜訊</span>
-    </label>
-    <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-      <span><strong>背景圖樣：</strong></span>
-      <select id="selBgArt">
-        <option value="gengar_art1.jpg">暗影幽靈（同人插畫 1）</option>
-        <option value="gengar_art2.png">紫霧紅眼（同人插畫 2）</option>
-        <option value="gengar_art3.png">深淵凝視（同人插畫 3）</option>
-        <option value="gengar_bg.png">經典立繪</option>
-      </select>
-    </label>
-    <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-      <span><strong>右側機構按鈕：</strong></span>
-      <select id="selAuxLayout">
-        <option value="m3m4">M3 (A+/A-) + M4（4 顆）</option>
-        <option value="m3">僅保留 M3（A+ / A- 2 顆）</option>
-        <option value="m3p">僅保留 M3 A+（單顆大按鈕）</option>
-      </select>
-    </label>
-    <label style="display:flex; align-items:center; gap:8px;">
-      <span>微動脈衝時間 (ms)：</span>
-      <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:80px;" />
-    </label>
-  </div>
-
-  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
-    <h4 style="margin:0;">M3 機構（A+ / A-）手動設定</h4>
-    <button type="button" class="btn-sm" id="btnSwapM3Bits" style="padding:4px 8px; font-size:12px;">⇄ 互換 A+ / A- Bit</button>
-  </div>
-  <div class="m3-cfg-card">
-    <strong style="font-size:13px;">M3 正轉 (A+)</strong>
-    <div class="m3-cfg-grid">
-      <label>按鈕名稱
-        <input type="text" id="m3pLabel" maxlength="20" placeholder="M3 正轉 (A+)" />
-      </label>
-      <label>Bit 腳位
-        <select id="m3pBit"></select>
-      </label>
-      <label>觸發模式
-        <select id="m3pMode">
-          <option value="hold">按住動作 (Hold)</option>
-          <option value="toggle">點一下鎖定 (Toggle)</option>
-          <option value="pulse">定時脈衝 (Pulse)</option>
-        </select>
-      </label>
-      <label>脈衝時間 (ms)
-        <input type="number" id="m3pPulseMs" min="20" max="5000" step="10" />
-      </label>
-    </div>
-  </div>
-  <div class="m3-cfg-card">
-    <strong style="font-size:13px;">M3 反轉 (A-)</strong>
-    <div class="m3-cfg-grid">
-      <label>按鈕名稱
-        <input type="text" id="m3nLabel" maxlength="20" placeholder="M3 反轉 (A-)" />
-      </label>
-      <label>Bit 腳位
-        <select id="m3nBit"></select>
-      </label>
-      <label>觸發模式
-        <select id="m3nMode">
-          <option value="hold">按住動作 (Hold)</option>
-          <option value="toggle">點一下鎖定 (Toggle)</option>
-          <option value="pulse">定時脈衝 (Pulse)</option>
-        </select>
-      </label>
-      <label>脈衝時間 (ms)
-        <input type="number" id="m3nPulseMs" min="20" max="5000" step="10" />
-      </label>
-    </div>
-  </div>
-
-  <h4 style="margin:12px 0 6px;">其他馬達 Bit 映射（免改程式碼調整接線）</h4>
-  <p style="margin:0 0 10px; font-size:13px; color:var(--muted);">
-    可先切到「8-Bit 測試」測出各 Bit 對應馬達後在此指定。設定會自動儲存。
-  </p>
-  <div id="mapRows"></div>
-  <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
-    <button class="btn-sm" id="btnResetSettings">恢復預設</button>
-    <button class="btn-sm primary" id="btnSaveSettings">儲存並關閉</button>
-  </div>
-</dialog>
 
 <script>
 const SVC_UUID = 0xffe0;
@@ -987,11 +1007,15 @@ function openSettings() {
       <label>反轉: <select data-key="${kn}">${bitOptions(keyMap[kn])}</select></label>
     </div>
   `).join("");
-  settingsDialog.showModal();
+  settingsDialog.hidden = false;
 }
 
 document.getElementById("btnSettings").onclick = openSettings;
 document.getElementById("btnFloatSettings").onclick = openSettings;
+document.getElementById("btnCancelSettings").onclick = () => { settingsDialog.hidden = true; };
+settingsDialog.addEventListener("click", (e) => {
+  if (e.target === settingsDialog) settingsDialog.hidden = true;
+});
 
 document.getElementById("btnResetSettings").onclick = () => {
   keyMap = { ...DEFAULT_MAP };
@@ -1003,7 +1027,7 @@ document.getElementById("btnResetSettings").onclick = () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
   localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
   applyBgArt();
-  settingsDialog.close();
+  settingsDialog.hidden = true;
   renderStage();
 };
 
@@ -1033,7 +1057,7 @@ document.getElementById("btnSaveSettings").onclick = () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
   localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
   applyBgArt();
-  settingsDialog.close();
+  settingsDialog.hidden = true;
   renderStage();
 };
 
