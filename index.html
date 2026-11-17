@@ -337,9 +337,10 @@ let txChar = null;
 let timerId = null;
 let inFlight = false;
 let wakeLock = null;
-let driveFast = true; // true=快 (100%), false=慢 (60%, 3/5 duty)
+let driveFast = true; // true=快 (100%), false=慢 (60%, 30ms ON / 20ms OFF @ 20Hz)
 let nudgeMode = false; // 微動模式: 點一下只轉設定毫秒數
 let tickPhase = 0;
+let lastTickOut = -1;
 
 // 分開追蹤移動 (M1/M2) 與機構 (M3/M4)，讓移動降速時機構仍保持 100% 扭力
 const activeDrive = new Map();
@@ -650,6 +651,7 @@ function cleanup() {
   txChar = null;
   pendingSend = null;
   inFlight = false;
+  lastTickOut = -1;
   activeDrive.clear();
   activeAux.clear();
   updateTxUI();
@@ -684,17 +686,26 @@ btnConn.onclick = async () => {
     btnConn.disabled = true;
     btnDisc.disabled = false;
     tickPhase = 0;
+    lastTickOut = -1;
+    let hbCount = 0;
     timerId = setInterval(() => {
       const { drive, aux, combined } = computeMasks();
       if (drive === 0 || driveFast) {
-        if (tickPhase === 0) sendByte(combined, false);
+        hbCount = (hbCount + 1) % 10;
+        if (hbCount === 1) {
+          lastTickOut = combined;
+          sendByte(combined, false);
+        }
       } else {
-        // 慢速 60% (5 tick = 100ms 週期內 3 tick ON / 2 tick OFF)，機構 M3/M4 仍維持 100%
+        // 慢速 60% @ 20Hz (50ms 週期內 30ms ON / 20ms OFF)，僅在電位切換邊緣送出 BLE 避免塞車
         const out = (tickPhase < 3 ? drive : 0) | aux;
-        sendByte(out, true);
+        if (out !== lastTickOut) {
+          lastTickOut = out;
+          sendByte(out, true);
+        }
+        tickPhase = (tickPhase + 1) % 5;
       }
-      tickPhase = (tickPhase + 1) % 5;
-    }, 20);
+    }, 10);
   } catch (err) {
     statusEl.textContent = "連線失敗";
     cleanup();
