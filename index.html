@@ -39,11 +39,25 @@
     }
     .gengar-bg {
       position: absolute; inset: 0; pointer-events: none; z-index: 0;
-      display: flex; align-items: center; justify-content: center; overflow: hidden;
+      overflow: hidden;
     }
-    .gengar-bg img {
-      width: min(56vw, 360px); max-height: 78%; object-fit: contain;
-      opacity: 0.24; filter: drop-shadow(0 0 28px rgba(168, 85, 247, 0.5));
+    .gengar-wallpaper {
+      position: absolute; inset: 0;
+      background-size: cover; background-position: center;
+      opacity: 0.42; transition: background-image 0.2s ease;
+    }
+    .gengar-vignette {
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at center, rgba(18, 11, 30, 0.35) 0%, rgba(18, 11, 30, 0.82) 100%);
+    }
+    .gengar-crest {
+      position: absolute; right: 12px; bottom: 8px;
+      width: min(22vw, 140px); height: auto; object-fit: contain;
+      opacity: 0.18; filter: drop-shadow(0 0 18px rgba(168, 85, 247, 0.55));
+    }
+    .gengar-emblem {
+      width: 22px; height: 20px; flex-shrink: 0;
+      filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.45));
     }
     .topbar, .stage { position: relative; z-index: 1; }
     .topbar {
@@ -103,9 +117,19 @@
     /* 主操控區 */
     .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
     .pad-box {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      position: relative;
+      background: rgba(24, 14, 42, 0.72);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border); border-radius: 12px;
       padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 0;
+      box-shadow: 0 6px 24px rgba(10, 4, 20, 0.45), inset 0 1px 0 rgba(216, 180, 254, 0.12);
     }
+    .pad-box::before, .pad-box::after {
+      content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+      border-color: var(--accent-glow); border-style: solid; opacity: 0.55;
+    }
+    .pad-box::before { top: 4px; left: 4px; border-width: 2px 0 0 2px; border-radius: 6px 0 0 0; }
+    .pad-box::after { bottom: 4px; right: 4px; border-width: 0 2px 2px 0; border-radius: 0 0 6px 0; }
     .panel-bar {
       display: flex; align-items: center; gap: 5px; flex-wrap: wrap; flex-shrink: 0;
     }
@@ -142,12 +166,13 @@
     }
     .pad-btn {
       border-radius: 12px; border: 2px solid var(--border);
-      background: linear-gradient(180deg, rgba(46, 27, 78, 0.92), rgba(29, 17, 49, 0.95));
+      background: linear-gradient(180deg, rgba(46, 27, 78, 0.78), rgba(26, 15, 45, 0.86));
+      backdrop-filter: blur(6px);
       color: var(--text);
       font-size: clamp(14px, 2.5vw, 19px); font-weight: 700; cursor: pointer;
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
       min-height: 0; padding: 4px;
-      box-shadow: inset 0 1px 0 rgba(216, 180, 254, 0.14);
+      box-shadow: inset 0 1px 0 rgba(216, 180, 254, 0.16);
       transition: transform 0.04s, background 0.04s, box-shadow 0.04s;
     }
     .auxpad.m3-only .pad-btn,
@@ -157,15 +182,15 @@
     }
     .pad-btn small { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 500; }
     .pad-btn.active {
-      background: linear-gradient(135deg, #7c3aed, #c026d3);
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(192, 38, 211, 0.92));
       border-color: var(--accent-glow);
-      box-shadow: 0 0 16px rgba(232, 121, 249, 0.55);
+      box-shadow: 0 0 18px rgba(232, 121, 249, 0.65);
       transform: scale(0.97);
     }
     .pad-btn.stop-center {
-      background: linear-gradient(180deg, #4c1121, #2e0a14);
-      border-color: #dc2626;
-      box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.25);
+      background: linear-gradient(180deg, rgba(92, 16, 36, 0.88), rgba(46, 10, 20, 0.94));
+      border-color: #ef4444;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.35), inset 0 0 14px rgba(239, 68, 68, 0.3);
       font-size: clamp(13px, 2.2vw, 16px);
     }
     .empty { pointer-events: none; opacity: 0; }
@@ -223,9 +248,17 @@
 <body>
 <div class="app">
   <div class="gengar-bg" aria-hidden="true">
-    <img src="./gengar_bg.png" alt="" />
+    <div class="gengar-wallpaper" id="gengarWallpaper"></div>
+    <div class="gengar-vignette"></div>
+    <img class="gengar-crest" id="gengarCrest" src="./gengar_bg.png" alt="" />
   </div>
   <div class="topbar">
+    <svg class="gengar-emblem" viewBox="0 0 64 56" aria-hidden="true">
+      <path d="M12,20 L4,4 L22,14 Q32,9 42,14 L60,4 L52,20 Q58,31 54,43 Q48,54 32,54 Q16,54 10,43 Q6,31 12,20 Z" fill="#7c3aed" stroke="#c084fc" stroke-width="2"/>
+      <polygon points="15,24 28,29 18,33" fill="#ef4444"/>
+      <polygon points="49,24 36,29 46,33" fill="#ef4444"/>
+      <path d="M16,38 Q32,48 48,38 Q40,50 32,50 Q24,50 16,38 Z" fill="#f5f3ff"/>
+    </svg>
     <button class="btn-sm primary" id="btnConn">連線 BLE</button>
     <button class="btn-sm danger" id="btnDisc" disabled>斷線</button>
     <span class="pill" id="status">未連線</span>
@@ -238,6 +271,12 @@
   </div>
 
   <div class="floating-bar" id="floatingBar">
+    <svg class="gengar-emblem" style="width:18px;height:16px;" viewBox="0 0 64 56" aria-hidden="true">
+      <path d="M12,20 L4,4 L22,14 Q32,9 42,14 L60,4 L52,20 Q58,31 54,43 Q48,54 32,54 Q16,54 10,43 Q6,31 12,20 Z" fill="#7c3aed" stroke="#c084fc" stroke-width="2"/>
+      <polygon points="15,24 28,29 18,33" fill="#ef4444"/>
+      <polygon points="49,24 36,29 46,33" fill="#ef4444"/>
+      <path d="M16,38 Q32,48 48,38 Q40,50 32,50 Q24,50 16,38 Z" fill="#f5f3ff"/>
+    </svg>
     <span class="ble-dot" id="floatBleDot" title="BLE 狀態"></span>
     <button class="float-btn" id="btnFloatMenu" title="展開工具列">☰ 選單</button>
     <button class="float-btn" id="btnFloatSettings" title="設定">⚙</button>
@@ -252,6 +291,15 @@
     <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
       <input type="checkbox" id="chkPtOnly" style="width:18px; height:18px;" />
       <span><strong>僅掃描 PT 開頭裝置</strong> — 優先過濾賽場雜訊</span>
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <span><strong>背景圖樣：</strong></span>
+      <select id="selBgArt">
+        <option value="gengar_art1.jpg">暗影幽靈（同人插畫 1）</option>
+        <option value="gengar_art2.png">紫霧紅眼（同人插畫 2）</option>
+        <option value="gengar_art3.png">深淵凝視（同人插畫 3）</option>
+        <option value="gengar_bg.png">經典立繪</option>
+      </select>
     </label>
     <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
       <span><strong>右側機構按鈕：</strong></span>
@@ -339,6 +387,7 @@ const DEFAULT_MAP = {
 };
 const DEFAULT_SETTINGS = {
   auxLayout: "m3m4", // "m3m4" | "m3" | "m3p"
+  bgArt: "gengar_art1.jpg",
   nudgeMs: 60,
   ptOnly: true,
   m3p: { label: "M3 正轉 (A+)", mode: "hold", pulseMs: 250 },
@@ -783,6 +832,7 @@ document.getElementById("btnFull").onclick = () => {
 const settingsDialog = document.getElementById("settingsDialog");
 const mapRows = document.getElementById("mapRows");
 const chkPtOnly = document.getElementById("chkPtOnly");
+const selBgArt = document.getElementById("selBgArt");
 const selAuxLayout = document.getElementById("selAuxLayout");
 const numNudgeMs = document.getElementById("numNudgeMs");
 const m3pLabel = document.getElementById("m3pLabel");
@@ -821,8 +871,23 @@ document.getElementById("btnSwapM3Bits").onclick = () => {
   m3nBit.value = tmp;
 };
 
+function applyBgArt() {
+  const art = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
+  const wp = document.getElementById("gengarWallpaper");
+  const crest = document.getElementById("gengarCrest");
+  const isOfficial = art === "gengar_bg.png";
+  wp.style.backgroundImage = isOfficial ? "none" : `url("./${art}")`;
+  crest.style.width = isOfficial ? "min(56vw, 360px)" : "";
+  crest.style.right = isOfficial ? "50%" : "";
+  crest.style.bottom = isOfficial ? "50%" : "";
+  crest.style.transform = isOfficial ? "translate(50%, 50%)" : "";
+  crest.style.opacity = isOfficial ? "0.24" : "";
+}
+applyBgArt();
+
 function openSettings() {
   chkPtOnly.checked = uiSettings.ptOnly;
+  selBgArt.value = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
   selAuxLayout.value = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   numNudgeMs.value = uiSettings.nudgeMs;
 
@@ -860,12 +925,14 @@ document.getElementById("btnResetSettings").onclick = () => {
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
   localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
+  applyBgArt();
   settingsDialog.close();
   renderStage();
 };
 
 document.getElementById("btnSaveSettings").onclick = () => {
   uiSettings.ptOnly = chkPtOnly.checked;
+  uiSettings.bgArt = selBgArt.value;
   uiSettings.auxLayout = selAuxLayout.value;
   uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
 
@@ -888,6 +955,7 @@ document.getElementById("btnSaveSettings").onclick = () => {
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
   localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
+  applyBgArt();
   settingsDialog.close();
   renderStage();
 };

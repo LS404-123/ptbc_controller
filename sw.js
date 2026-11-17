@@ -1,5 +1,14 @@
-const CACHE = "ptbc-a01-v5";
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg", "./gengar_bg.png"];
+const CACHE = "ptbc-a01-v6";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./manifest.json",
+  "./icon.svg",
+  "./gengar_bg.png",
+  "./gengar_art1.jpg",
+  "./gengar_art2.png",
+  "./gengar_art3.png"
+];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
