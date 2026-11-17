@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d0f14" />
+  <link rel="manifest" href="./manifest.json" />
+  <title>PTBC A01 Controller</title>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --panel: #171b24;
+      --border: #2a3140;
+      --accent: #2563eb;
+      --accent-glow: #60a5fa;
+      --danger: #991b1b;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden; touch-action: none; user-select: none;
+    }
+    .app { display: flex; flex-direction: column; height: 100%; padding: 8px 12px; gap: 8px; }
+    .topbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 6px 10px;
+    }
+    .btn-sm {
+      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: #222938; color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-sm.primary { background: var(--accent); border-color: var(--accent-glow); }
+    .btn-sm.danger { background: var(--danger); border-color: #ef4444; }
+    .pill {
+      font-family: monospace; font-size: 13px; padding: 5px 9px;
+      border-radius: 6px; background: #0b0d12; border: 1px solid var(--border); color: var(--muted);
+    }
+    .pill.ok { color: #4ade80; border-color: #166534; }
+    .spacer { flex: 1; }
+
+    /* 主操控區 */
+    .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
+    .pad-box {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+      padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 0;
+    }
+    .panel-bar {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .panel-title { font-size: 12px; color: var(--muted); font-weight: 600; margin-right: 4px; }
+    .seg-btn {
+      flex: 1; min-width: 44px; padding: 7px 6px; border-radius: 8px;
+      border: 1px solid var(--border); background: #1f2533; color: var(--muted);
+      font-size: 13px; font-weight: 700; cursor: pointer; text-align: center;
+    }
+    .seg-btn.on { background: var(--accent); border-color: var(--accent-glow); color: #fff; }
+    .seg-btn.nudge-on { background: #b45309; border-color: #f59e0b; color: #fff; }
+    .pad-grid { flex: 1; display: grid; gap: 10px; min-height: 0; }
+    .dpad {
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+    }
+    .auxpad {
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+    }
+    .auxpad.m3-only {
+      grid-template-columns: 1fr;
+      grid-template-rows: repeat(2, 1fr);
+    }
+    .rawpad {
+      display: grid; gap: 10px; min-height: 0;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      grid-column: 1 / -1;
+    }
+    .pad-btn {
+      border-radius: 12px; border: 2px solid var(--border);
+      background: #1f2533; color: var(--text);
+      font-size: 18px; font-weight: 700; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+      transition: transform 0.04s, background 0.04s;
+    }
+    .pad-btn small { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 500; }
+    .pad-btn.active {
+      background: var(--accent); border-color: var(--accent-glow);
+      transform: scale(0.97);
+    }
+    .pad-btn.stop-center { background: #3b1518; border-color: #7f1d1d; font-size: 15px; }
+    .empty { pointer-events: none; opacity: 0; }
+
+    /* 設定抽屜 */
+    dialog {
+      background: var(--panel); color: var(--text); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; width: min(94vw, 520px); max-height: 88vh; overflow-y: auto;
+    }
+    dialog::backdrop { background: rgba(0,0,0,0.7); }
+    .map-row { display: grid; grid-template-columns: 110px 1fr 1fr; gap: 8px; align-items: center; margin: 8px 0; }
+    select { background: #0d0f14; color: var(--text); border: 1px solid var(--border); padding: 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <button class="btn-sm primary" id="btnConn">連線 BLE</button>
+    <button class="btn-sm danger" id="btnDisc" disabled>斷線</button>
+    <span class="pill" id="status">未連線</span>
+    <span class="pill" id="txHex">TX: 0x00</span>
+    <div class="spacer"></div>
+    <button class="btn-sm" id="btnMode">模式: 車體+機構</button>
+    <button class="btn-sm" id="btnSettings">設定</button>
+    <button class="btn-sm" id="btnFull">全螢幕</button>
+  </div>
+
+  <div class="stage" id="stage"></div>
+</div>
+
+<dialog id="settingsDialog">
+  <h3 style="margin:0 0 10px;">控制器設定</h3>
+  <div style="display:flex; flex-direction:column; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:12px;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" id="chkPtOnly" style="width:18px; height:18px;" />
+      <span><strong>僅掃描 PT 開頭裝置</strong> — 優先過濾賽場雜訊</span>
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" id="chkM3Only" style="width:18px; height:18px;" />
+      <span><strong>僅保留 M3（隱藏 M4）</strong> — 右側改為兩顆 M3 大按鈕</span>
+    </label>
+    <label style="display:flex; align-items:center; gap:8px;">
+      <span>微動脈衝時間 (ms)：</span>
+      <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:80px; background:#0d0f14; color:var(--text); border:1px solid var(--border); padding:5px 8px; border-radius:6px;" />
+    </label>
+  </div>
+  <h4 style="margin:0 0 6px;">馬達 Bit 映射（免改程式碼調整接線）</h4>
+  <p style="margin:0 0 10px; font-size:13px; color:var(--muted);">
+    可先切到「8-Bit 測試」測出各 Bit 對應馬達後在此指定。設定會自動儲存。
+  </p>
+  <div id="mapRows"></div>
+  <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+    <button class="btn-sm" id="btnResetSettings">恢復預設</button>
+    <button class="btn-sm primary" id="btnSaveSettings">儲存並關閉</button>
+  </div>
+</dialog>
+
+<script>
+const SVC_UUID = 0xffe0;
+const CHR_UUID = 0xffe1;
+const STORAGE_KEY = "ptbc_a01_keymap_v1";
+
+// 預設映射與介面設定（自動存入 localStorage）
+const DEFAULT_MAP = {
+  m1p: 0x01, m1n: 0x02, // 左輪 (M1)
+  m2p: 0x04, m2n: 0x08, // 右輪 (M2)
+  m3p: 0x10, m3n: 0x20, // 機構 A (M3)
+  m4p: 0x40, m4n: 0x80, // 機構 B (M4)
+};
+const DEFAULT_SETTINGS = { m3Only: false, nudgeMs: 60, ptOnly: true };
+
+let keyMap = loadJSON(STORAGE_KEY, DEFAULT_MAP);
+let uiSettings = loadJSON("ptbc_a01_ui_v1", DEFAULT_SETTINGS);
+let mode = "drive"; // "drive" | "raw"
+let device = null;
+let txChar = null;
+let timerId = null;
+let inFlight = false;
+let wakeLock = null;
+let driveFast = true; // true=快 (100%), false=慢 (60%, 3/5 duty)
+let nudgeMode = false; // 微動模式: 點一下只轉設定毫秒數
+let tickPhase = 0;
+
+// 分開追蹤移動 (M1/M2) 與機構 (M3/M4)，讓移動降速時機構仍保持 100% 扭力
+const activeDrive = new Map();
+const activeAux = new Map();
+
+function loadJSON(key, fallback) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key));
+    return saved ? { ...fallback, ...saved } : { ...fallback };
+  } catch {
+    return { ...fallback };
+  }
+}
+
+function guardPairs(m) {
+  const pairs = [
+    [keyMap.m1p, keyMap.m1n],
+    [keyMap.m2p, keyMap.m2n],
+    [keyMap.m3p, keyMap.m3n],
+    [keyMap.m4p, keyMap.m4n],
+  ];
+  for (const [a, b] of pairs) {
+    if ((m & a) && (m & b)) m &= ~(a | b);
+  }
+  return m & 0xff;
+}
+
+function computeMasks() {
+  let d = 0;
+  for (const bits of activeDrive.values()) d |= bits;
+  let a = 0;
+  for (const bits of activeAux.values()) a |= bits;
+  const combined = guardPairs(d | a);
+  return { drive: guardPairs(d) & combined, aux: guardPairs(a) & combined, combined };
+}
+
+function updateTxUI() {
+  const { combined } = computeMasks();
+  document.getElementById("txHex").textContent = "TX: 0x" + combined.toString(16).padStart(2, "0").toUpperCase();
+}
+
+let pendingSend = null;
+
+async function sendByte(val, fast = false, force = false) {
+  if (!txChar) return;
+  if (inFlight) {
+    if (force) pendingSend = { val, fast }; // 不丟失按鍵/停機封包，等前一個完成後立刻補送最新值
+    return;
+  }
+  inFlight = true;
+  try {
+    if (fast) await txChar.writeValueWithoutResponse(new Uint8Array([val]));
+    else await txChar.writeValueWithResponse(new Uint8Array([val]));
+  } catch {
+    try { await txChar.writeValueWithoutResponse(new Uint8Array([val])); } catch {}
+  } finally {
+    inFlight = false;
+    if (pendingSend) {
+      const next = pendingSend;
+      pendingSend = null;
+      sendByte(next.val, next.fast, true);
+    }
+  }
+}
+
+function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
+  let nudgeTimer = null;
+  const release = () => {
+    if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
+    if (!targetMap.has(id)) return;
+    targetMap.delete(id);
+    el.classList.remove("active");
+    updateTxUI();
+    sendByte(computeMasks().combined, true, true);
+  };
+  const down = (e) => {
+    e.preventDefault();
+    if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
+    if (e.pointerId !== undefined) {
+      try { el.setPointerCapture(e.pointerId); } catch {}
+    }
+    targetMap.set(id, getBits());
+    el.classList.add("active");
+    if (navigator.vibrate) navigator.vibrate(12);
+    updateTxUI();
+    sendByte(computeMasks().combined, true, true);
+    if (allowNudge && nudgeMode) {
+      nudgeTimer = setTimeout(release, uiSettings.nudgeMs);
+    }
+  };
+  const up = (e) => {
+    e.preventDefault();
+    release();
+  };
+  el.addEventListener("pointerdown", down);
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+}
+
+function makePadBtn(label, sub, id, getBits, targetMap, allowNudge = false, extraClass = "") {
+  const btn = document.createElement("button");
+  btn.className = "pad-btn " + extraClass;
+  btn.innerHTML = `<span>${label}</span>${sub ? `<small>${sub}</small>` : ""}`;
+  if (id) bindHoldButton(btn, id, getBits, targetMap, allowNudge);
+  return btn;
+}
+
+function renderStage() {
+  activeDrive.clear();
+  activeAux.clear();
+  updateTxUI();
+  const stage = document.getElementById("stage");
+  stage.innerHTML = "";
+
+  if (mode === "raw") {
+    const box = document.createElement("div");
+    box.className = "pad-box rawpad";
+    for (let i = 0; i < 8; i++) {
+      const bit = 1 << i;
+      const hex = "0x" + bit.toString(16).padStart(2, "0").toUpperCase();
+      box.appendChild(makePadBtn(`Bit ${i}`, hex, `raw_${i}`, () => bit, activeAux));
+    }
+    stage.appendChild(box);
+    return;
+  }
+
+  // 左側：移動速度條 + 微動切換 + 3x3 D-Pad
+  const left = document.createElement("div");
+  left.className = "pad-box";
+
+  const speedBar = document.createElement("div");
+  speedBar.className = "panel-bar";
+  speedBar.innerHTML = `<span class="panel-title">移動速度</span>`;
+  [
+    { fast: true, label: "快 100%" },
+    { fast: false, label: "慢 60%" },
+  ].forEach(({ fast, label }) => {
+    const b = document.createElement("button");
+    b.className = "seg-btn" + (driveFast === fast ? " on" : "");
+    b.textContent = label;
+    b.dataset.fast = String(fast);
+    b.onclick = () => {
+      driveFast = fast;
+      speedBar.querySelectorAll("[data-fast]").forEach((x) => x.classList.toggle("on", x.dataset.fast === String(fast)));
+    };
+    speedBar.appendChild(b);
+  });
+
+  const btnNudge = document.createElement("button");
+  btnNudge.className = "seg-btn" + (nudgeMode ? " nudge-on" : "");
+  btnNudge.textContent = `微動 ${uiSettings.nudgeMs}ms`;
+  btnNudge.onclick = () => {
+    nudgeMode = !nudgeMode;
+    btnNudge.classList.toggle("nudge-on", nudgeMode);
+  };
+  speedBar.appendChild(btnNudge);
+
+  const dpadGrid = document.createElement("div");
+  dpadGrid.className = "pad-grid dpad";
+  const dpadLayout = [
+    ["↖ 左前", "M2+", "fl", () => keyMap.m2p],
+    ["▲ 前進", "M1+ M2+", "fwd", () => keyMap.m1p | keyMap.m2p],
+    ["↗ 右前", "M1+", "fr", () => keyMap.m1p],
+    ["◀ 原地左轉", "M1- M2+", "tl", () => keyMap.m1n | keyMap.m2p],
+    ["■ 急停", "0x00", "stop", () => 0, "stop-center"],
+    ["▶ 原地右轉", "M1+ M2-", "tr", () => keyMap.m1p | keyMap.m2n],
+    ["↙ 左後", "M2-", "bl", () => keyMap.m2n],
+    ["▼ 後退", "M1- M2-", "rev", () => keyMap.m1n | keyMap.m2n],
+    ["↘ 右後", "M1-", "br", () => keyMap.m1n],
+  ];
+  dpadLayout.forEach(([label, sub, id, fn, cls]) => {
+    if (id === "stop") {
+      const b = makePadBtn(label, sub, null, null, null, false, cls || "");
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        activeDrive.clear();
+        activeAux.clear();
+        document.querySelectorAll(".pad-btn.active").forEach((el) => el.classList.remove("active"));
+        updateTxUI();
+        sendByte(0, true, true);
+      });
+      dpadGrid.appendChild(b);
+      return;
+    }
+    dpadGrid.appendChild(makePadBtn(label, sub, id, fn, activeDrive, true, cls || ""));
+  });
+  left.appendChild(speedBar);
+  left.appendChild(dpadGrid);
+
+  // 右側：機構馬達（依設定顯示 M3+M4 或僅保留 M3）
+  const right = document.createElement("div");
+  right.className = "pad-box";
+  right.innerHTML = `<div class="panel-bar"><span class="panel-title">機構馬達（恆定 100% 扭力）</span></div>`;
+  const auxGrid = document.createElement("div");
+  auxGrid.className = "pad-grid auxpad" + (uiSettings.m3Only ? " m3-only" : "");
+  auxGrid.appendChild(makePadBtn("M3 正轉", "機構 A+", "m3p", () => keyMap.m3p, activeAux));
+  if (!uiSettings.m3Only) {
+    auxGrid.appendChild(makePadBtn("M4 正轉", "機構 B+", "m4p", () => keyMap.m4p, activeAux));
+  }
+  auxGrid.appendChild(makePadBtn("M3 反轉", "機構 A-", "m3n", () => keyMap.m3n, activeAux));
+  if (!uiSettings.m3Only) {
+    auxGrid.appendChild(makePadBtn("M4 反轉", "機構 B-", "m4n", () => keyMap.m4n, activeAux));
+  }
+  right.appendChild(auxGrid);
+
+  stage.appendChild(left);
+  stage.appendChild(right);
+}
+
+// BLE 連線管理
+const statusEl = document.getElementById("status");
+const btnConn = document.getElementById("btnConn");
+const btnDisc = document.getElementById("btnDisc");
+
+function cleanup() {
+  if (timerId) { clearInterval(timerId); timerId = null; }
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  txChar = null;
+  pendingSend = null;
+  inFlight = false;
+  activeDrive.clear();
+  activeAux.clear();
+  updateTxUI();
+  statusEl.textContent = "未連線";
+  statusEl.classList.remove("ok");
+  btnConn.disabled = false;
+  btnDisc.disabled = true;
+}
+
+btnConn.onclick = async () => {
+  try {
+    const reqOpts = uiSettings.ptOnly
+      ? { filters: [{ namePrefix: "PT" }], optionalServices: [SVC_UUID] }
+      : { acceptAllDevices: true, optionalServices: [SVC_UUID] };
+    device = await navigator.bluetooth.requestDevice(reqOpts);
+    device.addEventListener("gattserverdisconnected", cleanup);
+    statusEl.textContent = "連線中...";
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC_UUID);
+    txChar = await svc.getCharacteristic(CHR_UUID);
+    await txChar.startNotifications().catch(() => {});
+
+    if (navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen").catch(() => null);
+    }
+
+    statusEl.textContent = device.name || "已連線";
+    statusEl.classList.add("ok");
+    btnConn.disabled = true;
+    btnDisc.disabled = false;
+    tickPhase = 0;
+    timerId = setInterval(() => {
+      const { drive, aux, combined } = computeMasks();
+      if (drive === 0 || driveFast) {
+        if (tickPhase === 0) sendByte(combined, false);
+      } else {
+        // 慢速 60% (5 tick = 100ms 週期內 3 tick ON / 2 tick OFF)，機構 M3/M4 仍維持 100%
+        const out = (tickPhase < 3 ? drive : 0) | aux;
+        sendByte(out, true);
+      }
+      tickPhase = (tickPhase + 1) % 5;
+    }, 20);
+  } catch (err) {
+    statusEl.textContent = "連線失敗";
+    cleanup();
+  }
+};
+
+btnDisc.onclick = () => {
+  if (device && device.gatt.connected) device.gatt.disconnect();
+  cleanup();
+};
+
+// 模式切換與全螢幕
+const btnMode = document.getElementById("btnMode");
+btnMode.onclick = () => {
+  mode = mode === "drive" ? "raw" : "drive";
+  btnMode.textContent = mode === "drive" ? "模式: 車體+機構" : "模式: 8-Bit 測試";
+  renderStage();
+};
+
+document.getElementById("btnFull").onclick = () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  else document.exitFullscreen().catch(() => {});
+};
+
+// 控制器設定 Dialog
+const settingsDialog = document.getElementById("settingsDialog");
+const mapRows = document.getElementById("mapRows");
+const chkPtOnly = document.getElementById("chkPtOnly");
+const chkM3Only = document.getElementById("chkM3Only");
+const numNudgeMs = document.getElementById("numNudgeMs");
+const CHANNELS = [
+  ["M1 (左輪)", "m1p", "m1n"],
+  ["M2 (右輪)", "m2p", "m2n"],
+  ["M3 (機構A)", "m3p", "m3n"],
+  ["M4 (機構B)", "m4p", "m4n"],
+];
+
+function bitOptions(selected) {
+  return Array.from({ length: 8 }, (_, i) => {
+    const v = 1 << i;
+    const hex = "0x" + v.toString(16).padStart(2, "0").toUpperCase();
+    return `<option value="${v}" ${v === selected ? "selected" : ""}>Bit ${i} (${hex})</option>`;
+  }).join("");
+}
+
+document.getElementById("btnSettings").onclick = () => {
+  chkPtOnly.checked = uiSettings.ptOnly;
+  chkM3Only.checked = uiSettings.m3Only;
+  numNudgeMs.value = uiSettings.nudgeMs;
+  mapRows.innerHTML = CHANNELS.map(([name, kp, kn]) => `
+    <div class="map-row">
+      <strong>${name}</strong>
+      <label>正轉: <select data-key="${kp}">${bitOptions(keyMap[kp])}</select></label>
+      <label>反轉: <select data-key="${kn}">${bitOptions(keyMap[kn])}</select></label>
+    </div>
+  `).join("");
+  settingsDialog.showModal();
+};
+
+document.getElementById("btnResetSettings").onclick = () => {
+  keyMap = { ...DEFAULT_MAP };
+  uiSettings = { ...DEFAULT_SETTINGS };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
+  localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
+  settingsDialog.close();
+  renderStage();
+};
+
+document.getElementById("btnSaveSettings").onclick = () => {
+  uiSettings.ptOnly = chkPtOnly.checked;
+  uiSettings.m3Only = chkM3Only.checked;
+  uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
+  mapRows.querySelectorAll("select").forEach((sel) => {
+    keyMap[sel.dataset.key] = Number(sel.value);
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
+  localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
+  settingsDialog.close();
+  renderStage();
+};
+
+renderStage();
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
