@@ -338,6 +338,10 @@
             <span>微動脈衝 (ms)：</span>
             <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:84px;" />
           </label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
+            <span>點放保底時間 (ms)：</span>
+            <input type="number" id="numMinHoldMs" min="0" max="250" step="10" style="width:84px;" />
+          </label>
           <h4 style="margin:6px 0 2px; font-size:13px;">其他馬達 Bit 映射</h4>
           <div id="mapRows"></div>
         </div>
@@ -411,6 +415,7 @@ const DEFAULT_SETTINGS = {
   auxLayout: "m3m4", // "m3m4" | "m3" | "m3p"
   bgArt: "gengar_art1.jpg",
   nudgeMs: 60,
+  minHoldMs: 70, // 快速點放最短保底輸出時間，確保 45ms 雙重確認補送有時間觸發且馬達動得起來
   ptOnly: true,
   m3p: { label: "M3 正轉 (A+)", mode: "hold", pulseMs: 250 },
   m3n: { label: "M3 反轉 (A-)", mode: "hold", pulseMs: 250 },
@@ -560,7 +565,8 @@ async function pumpTx() {
   } finally {
     inFlight = false;
     if (txChar && (cmdQueue.length > 0 || forceNextTx || desiredByte !== ackedByte)) {
-      pumpTx();
+      if (ackedByte === -1) setTimeout(pumpTx, 25);
+      else pumpTx();
     }
   }
 }
@@ -583,33 +589,51 @@ function sendByte(val, _fast = false, isStateChange = false) {
 
 function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
   let nudgeTimer = null;
-  const release = () => {
+  let minHoldTimer = null;
+  let downAt = 0;
+
+  const doRelease = () => {
     if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
+    if (minHoldTimer) { clearTimeout(minHoldTimer); minHoldTimer = null; }
     if (!targetMap.has(id)) return;
     targetMap.delete(id);
     el.classList.remove("active");
     updateTxUI();
     sendByte(computeMasks().combined, true, true);
   };
+
   const down = (e) => {
     e.preventDefault();
     if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
+    if (minHoldTimer) { clearTimeout(minHoldTimer); minHoldTimer = null; }
     if (e.pointerId !== undefined) {
       try { el.setPointerCapture(e.pointerId); } catch {}
     }
+    downAt = performance.now();
     targetMap.set(id, getBits());
     el.classList.add("active");
     if (navigator.vibrate) navigator.vibrate(12);
     updateTxUI();
     sendByte(computeMasks().combined, true, true);
     if (allowNudge && nudgeMode) {
-      nudgeTimer = setTimeout(release, uiSettings.nudgeMs);
+      nudgeTimer = setTimeout(doRelease, uiSettings.nudgeMs);
     }
   };
+
   const up = (e) => {
     e.preventDefault();
-    release();
+    if (!targetMap.has(id)) return;
+    if (minHoldTimer) return;
+    const minMs = Number(uiSettings.minHoldMs) || 0;
+    const remain = minMs - (performance.now() - downAt);
+    if (remain > 8) {
+      // 點放太快時保底維持輸出，讓 45ms 補送完成且馬達足以啟動後再停
+      minHoldTimer = setTimeout(doRelease, remain);
+    } else {
+      doRelease();
+    }
   };
+
   el.addEventListener("pointerdown", down);
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
@@ -943,6 +967,7 @@ const chkPtOnly = document.getElementById("chkPtOnly");
 const selBgArt = document.getElementById("selBgArt");
 const selAuxLayout = document.getElementById("selAuxLayout");
 const numNudgeMs = document.getElementById("numNudgeMs");
+const numMinHoldMs = document.getElementById("numMinHoldMs");
 const m3pLabel = document.getElementById("m3pLabel");
 const m3pBit = document.getElementById("m3pBit");
 const m3pMode = document.getElementById("m3pMode");
@@ -999,6 +1024,7 @@ function openSettings() {
   selBgArt.value = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
   selAuxLayout.value = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   numNudgeMs.value = uiSettings.nudgeMs;
+  numMinHoldMs.value = uiSettings.minHoldMs ?? DEFAULT_SETTINGS.minHoldMs;
 
   m3pLabel.value = uiSettings.m3p.label;
   m3pBit.innerHTML = bitOptions(keyMap.m3p);
@@ -1048,6 +1074,8 @@ document.getElementById("btnSaveSettings").onclick = () => {
   uiSettings.bgArt = selBgArt.value;
   uiSettings.auxLayout = selAuxLayout.value;
   uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
+  const rawMinHold = Number(numMinHoldMs.value);
+  uiSettings.minHoldMs = Number.isFinite(rawMinHold) ? Math.max(0, Math.min(250, rawMinHold)) : DEFAULT_SETTINGS.minHoldMs;
 
   uiSettings.m3p = {
     label: m3pLabel.value.trim() || DEFAULT_SETTINGS.m3p.label,
