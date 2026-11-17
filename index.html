@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0d0f14" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="./manifest.json" />
   <title>PTBC A01 Controller</title>
   <style>
@@ -19,48 +22,88 @@
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
-      margin: 0; padding: 0; width: 100%; height: 100%;
+      margin: 0; padding: 0; width: 100%; height: 100vh; height: 100dvh;
       background: var(--bg); color: var(--text);
       font-family: system-ui, -apple-system, sans-serif;
       overflow: hidden; touch-action: none; user-select: none;
     }
-    .app { display: flex; flex-direction: column; height: 100%; padding: 8px 12px; gap: 8px; }
-    .topbar {
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px; padding: 6px 10px;
+    .app {
+      display: flex; flex-direction: column; height: 100%; width: 100%;
+      padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+      gap: 6px;
     }
+    .topbar {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 5px 8px;
+      flex-shrink: 0;
+    }
+    body.topbar-hidden .topbar { display: none; }
+
+    /* PWA / 隱藏工具列時的角落懸浮膠囊 */
+    .floating-bar {
+      display: none;
+      position: fixed;
+      top: max(6px, env(safe-area-inset-top));
+      right: max(8px, env(safe-area-inset-right));
+      z-index: 50;
+      align-items: center;
+      gap: 6px;
+      background: rgba(23, 27, 36, 0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    }
+    body.topbar-hidden .floating-bar { display: flex; }
+    .ble-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #64748b; display: inline-block; flex-shrink: 0;
+      box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
+    }
+    .ble-dot.ok {
+      background: #4ade80;
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.65);
+    }
+    .ble-dot.busy { background: #facc15; }
+    .float-btn {
+      border: 1px solid var(--border); background: #222938; color: var(--text);
+      border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 700;
+      cursor: pointer; line-height: 1.2;
+    }
+
     .btn-sm {
-      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
-      background: #222938; color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+      padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+      background: #222938; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
     }
     .btn-sm.primary { background: var(--accent); border-color: var(--accent-glow); }
     .btn-sm.danger { background: var(--danger); border-color: #ef4444; }
     .pill {
-      font-family: monospace; font-size: 13px; padding: 5px 9px;
+      font-family: monospace; font-size: 12px; padding: 4px 8px;
       border-radius: 6px; background: #0b0d12; border: 1px solid var(--border); color: var(--muted);
     }
     .pill.ok { color: #4ade80; border-color: #166534; }
     .spacer { flex: 1; }
 
     /* 主操控區 */
-    .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
+    .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
     .pad-box {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-      padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 0;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 0;
     }
     .panel-bar {
-      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      display: flex; align-items: center; gap: 5px; flex-wrap: wrap; flex-shrink: 0;
     }
-    .panel-title { font-size: 12px; color: var(--muted); font-weight: 600; margin-right: 4px; }
+    .panel-title { font-size: 11px; color: var(--muted); font-weight: 600; margin-right: 2px; }
     .seg-btn {
-      flex: 1; min-width: 44px; padding: 7px 6px; border-radius: 8px;
+      flex: 1; min-width: 44px; padding: 6px 6px; border-radius: 7px;
       border: 1px solid var(--border); background: #1f2533; color: var(--muted);
-      font-size: 13px; font-weight: 700; cursor: pointer; text-align: center;
+      font-size: 12px; font-weight: 700; cursor: pointer; text-align: center;
     }
     .seg-btn.on { background: var(--accent); border-color: var(--accent-glow); color: #fff; }
     .seg-btn.nudge-on { background: #b45309; border-color: #f59e0b; color: #fff; }
-    .pad-grid { flex: 1; display: grid; gap: 10px; min-height: 0; }
+    .pad-grid { flex: 1; display: grid; gap: 8px; min-height: 0; }
     .dpad {
       grid-template-columns: repeat(3, 1fr);
       grid-template-rows: repeat(3, 1fr);
@@ -73,8 +116,12 @@
       grid-template-columns: 1fr;
       grid-template-rows: repeat(2, 1fr);
     }
+    .auxpad.m3-plus-only {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
     .rawpad {
-      display: grid; gap: 10px; min-height: 0;
+      display: grid; gap: 8px; min-height: 0;
       grid-template-columns: repeat(4, 1fr);
       grid-template-rows: repeat(2, 1fr);
       grid-column: 1 / -1;
@@ -82,26 +129,76 @@
     .pad-btn {
       border-radius: 12px; border: 2px solid var(--border);
       background: #1f2533; color: var(--text);
-      font-size: 18px; font-weight: 700; cursor: pointer;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+      font-size: clamp(14px, 2.5vw, 19px); font-weight: 700; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      min-height: 0; padding: 4px;
       transition: transform 0.04s, background 0.04s;
+    }
+    .auxpad.m3-only .pad-btn,
+    .auxpad.m3-plus-only .pad-btn {
+      font-size: clamp(18px, 3.2vw, 26px);
+      gap: 6px;
     }
     .pad-btn small { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 500; }
     .pad-btn.active {
       background: var(--accent); border-color: var(--accent-glow);
       transform: scale(0.97);
     }
-    .pad-btn.stop-center { background: #3b1518; border-color: #7f1d1d; font-size: 15px; }
+    .pad-btn.stop-center { background: #3b1518; border-color: #7f1d1d; font-size: clamp(13px, 2.2vw, 16px); }
     .empty { pointer-events: none; opacity: 0; }
+
+    /* 手機橫向緊湊微調 */
+    @media (orientation: landscape) and (max-height: 460px) {
+      .app { gap: 5px; }
+      .stage { gap: 6px; }
+      .pad-box { padding: 6px; gap: 5px; border-radius: 10px; }
+      .pad-grid { gap: 6px; }
+      .pad-btn { border-radius: 10px; }
+      .pad-btn small { font-size: 10px; }
+    }
+
+    /* 直向提示遮罩 */
+    .portrait-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(13, 15, 20, 0.96);
+      color: var(--text);
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 24px; gap: 14px;
+    }
+    .portrait-overlay .rotate-icon {
+      font-size: 52px; line-height: 1;
+      animation: rotateHint 1.8s ease-in-out infinite;
+    }
+    @keyframes rotateHint {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(-90deg); }
+    }
+    @media (orientation: portrait) {
+      .portrait-overlay { display: flex; }
+    }
 
     /* 設定抽屜 */
     dialog {
       background: var(--panel); color: var(--text); border: 1px solid var(--border);
-      border-radius: 12px; padding: 14px; width: min(94vw, 520px); max-height: 88vh; overflow-y: auto;
+      border-radius: 12px; padding: 14px; width: min(94vw, 560px); max-height: 88dvh; overflow-y: auto;
     }
     dialog::backdrop { background: rgba(0,0,0,0.7); }
     .map-row { display: grid; grid-template-columns: 110px 1fr 1fr; gap: 8px; align-items: center; margin: 8px 0; }
-    select { background: #0d0f14; color: var(--text); border: 1px solid var(--border); padding: 6px; border-radius: 6px; }
+    .m3-cfg-card {
+      background: #11151d; border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+    }
+    .m3-cfg-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center;
+    }
+    .m3-cfg-grid label {
+      display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted);
+    }
+    select, input[type="text"], input[type="number"] {
+      background: #0d0f14; color: var(--text); border: 1px solid var(--border);
+      padding: 6px 8px; border-radius: 6px; font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -115,9 +212,24 @@
     <button class="btn-sm" id="btnMode">模式: 車體+機構</button>
     <button class="btn-sm" id="btnSettings">設定</button>
     <button class="btn-sm" id="btnFull">全螢幕</button>
+    <button class="btn-sm" id="btnHideTopbar" title="隱藏工具列">▲ 收起</button>
+  </div>
+
+  <div class="floating-bar" id="floatingBar">
+    <span class="ble-dot" id="floatBleDot" title="BLE 狀態"></span>
+    <button class="float-btn" id="btnFloatMenu" title="展開工具列">☰ 選單</button>
+    <button class="float-btn" id="btnFloatSettings" title="設定">⚙</button>
   </div>
 
   <div class="stage" id="stage"></div>
+</div>
+
+<div class="portrait-overlay" id="portraitOverlay">
+  <div class="rotate-icon">📱</div>
+  <h2 style="margin:0;">請將裝置轉為橫向</h2>
+  <p style="margin:0; color:var(--muted); font-size:14px; max-width:280px;">
+    PTBC A01 雙手遙控介面專為橫向握持設計，請旋轉螢幕以開始操作。
+  </p>
 </div>
 
 <dialog id="settingsDialog">
@@ -127,16 +239,68 @@
       <input type="checkbox" id="chkPtOnly" style="width:18px; height:18px;" />
       <span><strong>僅掃描 PT 開頭裝置</strong> — 優先過濾賽場雜訊</span>
     </label>
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-      <input type="checkbox" id="chkM3Only" style="width:18px; height:18px;" />
-      <span><strong>僅保留 M3（隱藏 M4）</strong> — 右側改為兩顆 M3 大按鈕</span>
+    <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <span><strong>右側機構按鈕：</strong></span>
+      <select id="selAuxLayout">
+        <option value="m3m4">M3 (A+/A-) + M4（4 顆）</option>
+        <option value="m3">僅保留 M3（A+ / A- 2 顆）</option>
+        <option value="m3p">僅保留 M3 A+（單顆大按鈕）</option>
+      </select>
     </label>
     <label style="display:flex; align-items:center; gap:8px;">
       <span>微動脈衝時間 (ms)：</span>
-      <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:80px; background:#0d0f14; color:var(--text); border:1px solid var(--border); padding:5px 8px; border-radius:6px;" />
+      <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:80px;" />
     </label>
   </div>
-  <h4 style="margin:0 0 6px;">馬達 Bit 映射（免改程式碼調整接線）</h4>
+
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+    <h4 style="margin:0;">M3 機構（A+ / A-）手動設定</h4>
+    <button type="button" class="btn-sm" id="btnSwapM3Bits" style="padding:4px 8px; font-size:12px;">⇄ 互換 A+ / A- Bit</button>
+  </div>
+  <div class="m3-cfg-card">
+    <strong style="font-size:13px;">M3 正轉 (A+)</strong>
+    <div class="m3-cfg-grid">
+      <label>按鈕名稱
+        <input type="text" id="m3pLabel" maxlength="20" placeholder="M3 正轉 (A+)" />
+      </label>
+      <label>Bit 腳位
+        <select id="m3pBit"></select>
+      </label>
+      <label>觸發模式
+        <select id="m3pMode">
+          <option value="hold">按住動作 (Hold)</option>
+          <option value="toggle">點一下鎖定 (Toggle)</option>
+          <option value="pulse">定時脈衝 (Pulse)</option>
+        </select>
+      </label>
+      <label>脈衝時間 (ms)
+        <input type="number" id="m3pPulseMs" min="20" max="5000" step="10" />
+      </label>
+    </div>
+  </div>
+  <div class="m3-cfg-card">
+    <strong style="font-size:13px;">M3 反轉 (A-)</strong>
+    <div class="m3-cfg-grid">
+      <label>按鈕名稱
+        <input type="text" id="m3nLabel" maxlength="20" placeholder="M3 反轉 (A-)" />
+      </label>
+      <label>Bit 腳位
+        <select id="m3nBit"></select>
+      </label>
+      <label>觸發模式
+        <select id="m3nMode">
+          <option value="hold">按住動作 (Hold)</option>
+          <option value="toggle">點一下鎖定 (Toggle)</option>
+          <option value="pulse">定時脈衝 (Pulse)</option>
+        </select>
+      </label>
+      <label>脈衝時間 (ms)
+        <input type="number" id="m3nPulseMs" min="20" max="5000" step="10" />
+      </label>
+    </div>
+  </div>
+
+  <h4 style="margin:12px 0 6px;">其他馬達 Bit 映射（免改程式碼調整接線）</h4>
   <p style="margin:0 0 10px; font-size:13px; color:var(--muted);">
     可先切到「8-Bit 測試」測出各 Bit 對應馬達後在此指定。設定會自動儲存。
   </p>
@@ -159,10 +323,26 @@ const DEFAULT_MAP = {
   m3p: 0x10, m3n: 0x20, // 機構 A (M3)
   m4p: 0x40, m4n: 0x80, // 機構 B (M4)
 };
-const DEFAULT_SETTINGS = { m3Only: false, nudgeMs: 60, ptOnly: true };
+const DEFAULT_SETTINGS = {
+  auxLayout: "m3m4", // "m3m4" | "m3" | "m3p"
+  nudgeMs: 60,
+  ptOnly: true,
+  m3p: { label: "M3 正轉 (A+)", mode: "hold", pulseMs: 250 },
+  m3n: { label: "M3 反轉 (A-)", mode: "hold", pulseMs: 250 },
+};
+
+function loadSettings() {
+  const raw = loadJSON("ptbc_a01_ui_v1", DEFAULT_SETTINGS);
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    m3p: { ...DEFAULT_SETTINGS.m3p, ...(raw.m3p || {}) },
+    m3n: { ...DEFAULT_SETTINGS.m3n, ...(raw.m3n || {}) },
+  };
+}
 
 let keyMap = loadJSON(STORAGE_KEY, DEFAULT_MAP);
-let uiSettings = loadJSON("ptbc_a01_ui_v1", DEFAULT_SETTINGS);
+let uiSettings = loadSettings();
 let mode = "drive"; // "drive" | "raw"
 let device = null;
 let txChar = null;
@@ -271,6 +451,82 @@ function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
   el.addEventListener("pointercancel", up);
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+const m3Timers = new Map();
+const m3Buttons = new Map();
+
+function clearM3Timers() {
+  for (const t of m3Timers.values()) clearTimeout(t);
+  m3Timers.clear();
+}
+
+function clearM3Direction(id) {
+  if (m3Timers.has(id)) {
+    clearTimeout(m3Timers.get(id));
+    m3Timers.delete(id);
+  }
+  activeAux.delete(id);
+  const btn = m3Buttons.get(id);
+  if (btn) btn.classList.remove("active");
+}
+
+function bindM3Button(el, id, oppId, getBits, cfg) {
+  const modeType = cfg.mode || "hold";
+  if (modeType === "hold") {
+    bindHoldButton(el, id, getBits, activeAux, false);
+    return;
+  }
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (modeType === "toggle") {
+      if (activeAux.has(id)) {
+        clearM3Direction(id);
+      } else {
+        clearM3Direction(oppId);
+        activeAux.set(id, getBits());
+        el.classList.add("active");
+      }
+      if (navigator.vibrate) navigator.vibrate(12);
+      updateTxUI();
+      sendByte(computeMasks().combined, true, true);
+      return;
+    }
+    if (modeType === "pulse") {
+      clearM3Direction(id);
+      clearM3Direction(oppId);
+      activeAux.set(id, getBits());
+      el.classList.add("active");
+      if (navigator.vibrate) navigator.vibrate(12);
+      updateTxUI();
+      sendByte(computeMasks().combined, true, true);
+      const ms = Math.max(20, Math.min(5000, Number(cfg.pulseMs) || 250));
+      m3Timers.set(id, setTimeout(() => {
+        m3Timers.delete(id);
+        activeAux.delete(id);
+        el.classList.remove("active");
+        updateTxUI();
+        sendByte(computeMasks().combined, true, true);
+      }, ms));
+    }
+  });
+}
+
+function makeM3Btn(id, oppId, getBits, cfg, fallbackLabel) {
+  const modeType = cfg.mode || "hold";
+  const modeText = modeType === "toggle" ? "鎖定" : modeType === "pulse" ? `脈衝 ${Math.max(20, Math.min(5000, Number(cfg.pulseMs) || 250))}ms` : "按住";
+  const tag = id === "m3p" ? "A+" : "A-";
+  const label = (cfg.label || "").trim() || fallbackLabel;
+  const btn = document.createElement("button");
+  btn.className = "pad-btn";
+  btn.innerHTML = `<span>${escapeHtml(label)}</span><small>${tag} · ${modeText}</small>`;
+  m3Buttons.set(id, btn);
+  bindM3Button(btn, id, oppId, getBits, cfg);
+  return btn;
+}
+
 function makePadBtn(label, sub, id, getBits, targetMap, allowNudge = false, extraClass = "") {
   const btn = document.createElement("button");
   btn.className = "pad-btn " + extraClass;
@@ -280,6 +536,8 @@ function makePadBtn(label, sub, id, getBits, targetMap, allowNudge = false, extr
 }
 
 function renderStage() {
+  clearM3Timers();
+  m3Buttons.clear();
   activeDrive.clear();
   activeAux.clear();
   updateTxUI();
@@ -347,6 +605,7 @@ function renderStage() {
       const b = makePadBtn(label, sub, null, null, null, false, cls || "");
       b.addEventListener("pointerdown", (e) => {
         e.preventDefault();
+        clearM3Timers();
         activeDrive.clear();
         activeAux.clear();
         document.querySelectorAll(".pad-btn.active").forEach((el) => el.classList.remove("active"));
@@ -365,14 +624,17 @@ function renderStage() {
   const right = document.createElement("div");
   right.className = "pad-box";
   right.innerHTML = `<div class="panel-bar"><span class="panel-title">機構馬達（恆定 100% 扭力）</span></div>`;
+  const auxLayout = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   const auxGrid = document.createElement("div");
-  auxGrid.className = "pad-grid auxpad" + (uiSettings.m3Only ? " m3-only" : "");
-  auxGrid.appendChild(makePadBtn("M3 正轉", "機構 A+", "m3p", () => keyMap.m3p, activeAux));
-  if (!uiSettings.m3Only) {
+  auxGrid.className = "pad-grid auxpad" + (auxLayout === "m3" ? " m3-only" : auxLayout === "m3p" ? " m3-plus-only" : "");
+  auxGrid.appendChild(makeM3Btn("m3p", "m3n", () => keyMap.m3p, uiSettings.m3p, "M3 正轉 (A+)"));
+  if (auxLayout === "m3m4") {
     auxGrid.appendChild(makePadBtn("M4 正轉", "機構 B+", "m4p", () => keyMap.m4p, activeAux));
   }
-  auxGrid.appendChild(makePadBtn("M3 反轉", "機構 A-", "m3n", () => keyMap.m3n, activeAux));
-  if (!uiSettings.m3Only) {
+  if (auxLayout !== "m3p") {
+    auxGrid.appendChild(makeM3Btn("m3n", "m3p", () => keyMap.m3n, uiSettings.m3n, "M3 反轉 (A-)"));
+  }
+  if (auxLayout === "m3m4") {
     auxGrid.appendChild(makePadBtn("M4 反轉", "機構 B-", "m4n", () => keyMap.m4n, activeAux));
   }
   right.appendChild(auxGrid);
@@ -383,12 +645,20 @@ function renderStage() {
 
 // BLE 連線管理
 const statusEl = document.getElementById("status");
+const floatBleDot = document.getElementById("floatBleDot");
 const btnConn = document.getElementById("btnConn");
 const btnDisc = document.getElementById("btnDisc");
+
+function setBleDot(state) {
+  floatBleDot.classList.remove("ok", "busy");
+  if (state === "ok") floatBleDot.classList.add("ok");
+  else if (state === "busy") floatBleDot.classList.add("busy");
+}
 
 function cleanup() {
   if (timerId) { clearInterval(timerId); timerId = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  clearM3Timers();
   txChar = null;
   pendingSend = null;
   inFlight = false;
@@ -397,6 +667,7 @@ function cleanup() {
   updateTxUI();
   statusEl.textContent = "未連線";
   statusEl.classList.remove("ok");
+  setBleDot("idle");
   btnConn.disabled = false;
   btnDisc.disabled = true;
 }
@@ -409,6 +680,7 @@ btnConn.onclick = async () => {
     device = await navigator.bluetooth.requestDevice(reqOpts);
     device.addEventListener("gattserverdisconnected", cleanup);
     statusEl.textContent = "連線中...";
+    setBleDot("busy");
     const server = await device.gatt.connect();
     const svc = await server.getPrimaryService(SVC_UUID);
     txChar = await svc.getCharacteristic(CHR_UUID);
@@ -420,6 +692,7 @@ btnConn.onclick = async () => {
 
     statusEl.textContent = device.name || "已連線";
     statusEl.classList.add("ok");
+    setBleDot("ok");
     btnConn.disabled = true;
     btnDisc.disabled = false;
     tickPhase = 0;
@@ -445,6 +718,29 @@ btnDisc.onclick = () => {
   cleanup();
 };
 
+// PWA / 工具列顯示切換
+function isPWAMode() {
+  return (
+    window.matchMedia("(display-mode: fullscreen)").matches ||
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true
+  );
+}
+let topbarHidden = isPWAMode();
+function setTopbarHidden(hidden) {
+  topbarHidden = hidden;
+  document.body.classList.toggle("topbar-hidden", topbarHidden);
+}
+setTopbarHidden(topbarHidden);
+
+document.getElementById("btnHideTopbar").onclick = () => setTopbarHidden(true);
+document.getElementById("btnFloatMenu").onclick = () => setTopbarHidden(false);
+["fullscreen", "standalone"].forEach((dm) => {
+  window.matchMedia(`(display-mode: ${dm})`).addEventListener?.("change", (e) => {
+    if (e.matches) setTopbarHidden(true);
+  });
+});
+
 // 模式切換與全螢幕
 const btnMode = document.getElementById("btnMode");
 btnMode.onclick = () => {
@@ -462,12 +758,20 @@ document.getElementById("btnFull").onclick = () => {
 const settingsDialog = document.getElementById("settingsDialog");
 const mapRows = document.getElementById("mapRows");
 const chkPtOnly = document.getElementById("chkPtOnly");
-const chkM3Only = document.getElementById("chkM3Only");
+const selAuxLayout = document.getElementById("selAuxLayout");
 const numNudgeMs = document.getElementById("numNudgeMs");
+const m3pLabel = document.getElementById("m3pLabel");
+const m3pBit = document.getElementById("m3pBit");
+const m3pMode = document.getElementById("m3pMode");
+const m3pPulseMs = document.getElementById("m3pPulseMs");
+const m3nLabel = document.getElementById("m3nLabel");
+const m3nBit = document.getElementById("m3nBit");
+const m3nMode = document.getElementById("m3nMode");
+const m3nPulseMs = document.getElementById("m3nPulseMs");
+
 const CHANNELS = [
   ["M1 (左輪)", "m1p", "m1n"],
   ["M2 (右輪)", "m2p", "m2n"],
-  ["M3 (機構A)", "m3p", "m3n"],
   ["M4 (機構B)", "m4p", "m4n"],
 ];
 
@@ -479,10 +783,36 @@ function bitOptions(selected) {
   }).join("");
 }
 
-document.getElementById("btnSettings").onclick = () => {
+function syncPulseInputs() {
+  m3pPulseMs.disabled = m3pMode.value !== "pulse";
+  m3nPulseMs.disabled = m3nMode.value !== "pulse";
+}
+m3pMode.onchange = syncPulseInputs;
+m3nMode.onchange = syncPulseInputs;
+
+document.getElementById("btnSwapM3Bits").onclick = () => {
+  const tmp = m3pBit.value;
+  m3pBit.value = m3nBit.value;
+  m3nBit.value = tmp;
+};
+
+function openSettings() {
   chkPtOnly.checked = uiSettings.ptOnly;
-  chkM3Only.checked = uiSettings.m3Only;
+  selAuxLayout.value = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   numNudgeMs.value = uiSettings.nudgeMs;
+
+  m3pLabel.value = uiSettings.m3p.label;
+  m3pBit.innerHTML = bitOptions(keyMap.m3p);
+  m3pMode.value = uiSettings.m3p.mode;
+  m3pPulseMs.value = uiSettings.m3p.pulseMs;
+
+  m3nLabel.value = uiSettings.m3n.label;
+  m3nBit.innerHTML = bitOptions(keyMap.m3n);
+  m3nMode.value = uiSettings.m3n.mode;
+  m3nPulseMs.value = uiSettings.m3n.pulseMs;
+
+  syncPulseInputs();
+
   mapRows.innerHTML = CHANNELS.map(([name, kp, kn]) => `
     <div class="map-row">
       <strong>${name}</strong>
@@ -491,11 +821,18 @@ document.getElementById("btnSettings").onclick = () => {
     </div>
   `).join("");
   settingsDialog.showModal();
-};
+}
+
+document.getElementById("btnSettings").onclick = openSettings;
+document.getElementById("btnFloatSettings").onclick = openSettings;
 
 document.getElementById("btnResetSettings").onclick = () => {
   keyMap = { ...DEFAULT_MAP };
-  uiSettings = { ...DEFAULT_SETTINGS };
+  uiSettings = {
+    ...DEFAULT_SETTINGS,
+    m3p: { ...DEFAULT_SETTINGS.m3p },
+    m3n: { ...DEFAULT_SETTINGS.m3n },
+  };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
   localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
   settingsDialog.close();
@@ -504,11 +841,26 @@ document.getElementById("btnResetSettings").onclick = () => {
 
 document.getElementById("btnSaveSettings").onclick = () => {
   uiSettings.ptOnly = chkPtOnly.checked;
-  uiSettings.m3Only = chkM3Only.checked;
+  uiSettings.auxLayout = selAuxLayout.value;
   uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
+
+  uiSettings.m3p = {
+    label: m3pLabel.value.trim() || DEFAULT_SETTINGS.m3p.label,
+    mode: m3pMode.value,
+    pulseMs: Math.max(20, Math.min(5000, Number(m3pPulseMs.value) || 250)),
+  };
+  uiSettings.m3n = {
+    label: m3nLabel.value.trim() || DEFAULT_SETTINGS.m3n.label,
+    mode: m3nMode.value,
+    pulseMs: Math.max(20, Math.min(5000, Number(m3nPulseMs.value) || 250)),
+  };
+
+  keyMap.m3p = Number(m3pBit.value);
+  keyMap.m3n = Number(m3nBit.value);
   mapRows.querySelectorAll("select").forEach((sel) => {
     keyMap[sel.dataset.key] = Number(sel.value);
   });
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
   localStorage.setItem("ptbc_a01_ui_v1", JSON.stringify(uiSettings));
   settingsDialog.close();

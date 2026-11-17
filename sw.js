@@ -1,4 +1,4 @@
-const CACHE = "ptbc-a01-v1";
+const CACHE = "ptbc-a01-v2";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {
