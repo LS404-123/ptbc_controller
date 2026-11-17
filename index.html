@@ -263,6 +263,7 @@
     <button class="btn-sm danger" id="btnDisc" disabled>斷線</button>
     <span class="pill" id="status">未連線</span>
     <span class="pill" id="txHex">TX: 0x00</span>
+    <span class="pill" id="rttPill">ACK: --</span>
     <div class="spacer"></div>
     <button class="btn-sm" id="btnMode">模式: 車體+機構</button>
     <button class="btn-sm" id="btnSettings">設定</button>
@@ -278,6 +279,7 @@
       <path d="M16,38 Q32,48 48,38 Q40,50 32,50 Q24,50 16,38 Z" fill="#f5f3ff"/>
     </svg>
     <span class="ble-dot" id="floatBleDot" title="BLE 狀態"></span>
+    <span class="pill" id="floatRtt" style="padding:2px 6px; font-size:11px;">--ms</span>
     <button class="float-btn" id="btnFloatMenu" title="展開工具列">☰ 選單</button>
     <button class="float-btn" id="btnFloatSettings" title="設定">⚙</button>
   </div>
@@ -456,6 +458,29 @@ function updateTxUI() {
   document.getElementById("txHex").textContent = "TX: 0x" + combined.toString(16).padStart(2, "0").toUpperCase();
 }
 
+const rttPill = document.getElementById("rttPill");
+const floatRtt = document.getElementById("floatRtt");
+function updateRttUI(ms, ok = true) {
+  if (ms === null) {
+    rttPill.textContent = "ACK: --";
+    rttPill.classList.remove("ok");
+    floatRtt.textContent = "--ms";
+    floatRtt.classList.remove("ok");
+    return;
+  }
+  if (!ok) {
+    rttPill.textContent = "ACK: ✗ 重送";
+    rttPill.classList.remove("ok");
+    floatRtt.textContent = "✗";
+    floatRtt.classList.remove("ok");
+    return;
+  }
+  rttPill.textContent = `ACK: ✓ ${ms}ms`;
+  rttPill.classList.toggle("ok", ms < 60);
+  floatRtt.textContent = `${ms}ms`;
+  floatRtt.classList.toggle("ok", ms < 60);
+}
+
 let desiredByte = 0;
 let ackedByte = -1;
 let forceNextTx = false;
@@ -467,15 +492,19 @@ async function pumpTx() {
   inFlight = true;
   const val = desiredByte;
   forceNextTx = false;
+  const t0 = performance.now();
   try {
     await txChar.writeValueWithResponse(new Uint8Array([val]));
     ackedByte = val;
+    updateRttUI(Math.round(performance.now() - t0), true);
   } catch {
     try {
       await txChar.writeValueWithoutResponse(new Uint8Array([val]));
       ackedByte = val;
+      updateRttUI(Math.round(performance.now() - t0), true);
     } catch {
       ackedByte = -1; // 下次 tick 自動重送
+      updateRttUI(0, false);
     }
   } finally {
     inFlight = false;
@@ -750,6 +779,7 @@ function cleanup() {
   activeDrive.clear();
   activeAux.clear();
   updateTxUI();
+  updateRttUI(null);
   statusEl.textContent = "未連線";
   statusEl.classList.remove("ok");
   setBleDot("idle");
