@@ -41,7 +41,10 @@
       position: absolute; inset: 0; pointer-events: none; z-index: 0;
       display: flex; align-items: center; justify-content: center; overflow: hidden;
     }
-    .gengar-bg svg { width: min(62vw, 340px); height: auto; opacity: 0.11; filter: drop-shadow(0 0 24px rgba(168, 85, 247, 0.35)); }
+    .gengar-bg img {
+      width: min(56vw, 360px); max-height: 78%; object-fit: contain;
+      opacity: 0.24; filter: drop-shadow(0 0 28px rgba(168, 85, 247, 0.5));
+    }
     .topbar, .stage { position: relative; z-index: 1; }
     .topbar {
       display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -220,15 +223,7 @@
 <body>
 <div class="app">
   <div class="gengar-bg" aria-hidden="true">
-    <svg viewBox="0 0 200 180">
-      <path d="M35,55 L15,15 L62,40 Q100,22 138,40 L185,15 L165,55 Q186,88 176,125 Q162,166 100,168 Q38,166 24,125 Q14,88 35,55 Z" fill="#8b5cf6"/>
-      <polygon points="48,74 84,88 55,98" fill="#ef4444"/>
-      <polygon points="152,74 116,88 145,98" fill="#ef4444"/>
-      <circle cx="71" cy="86" r="4" fill="#120b1e"/>
-      <circle cx="129" cy="86" r="4" fill="#120b1e"/>
-      <path d="M46,112 Q100,148 154,112 Q132,154 100,154 Q68,154 46,112 Z" fill="#f5f3ff"/>
-      <path d="M68,123 L68,144 M84,128 L84,151 M100,130 L100,153 M116,128 L116,151 M132,123 L132,144" stroke="#4c2b7a" stroke-width="3"/>
-    </svg>
+    <img src="./gengar_bg.png" alt="" />
   </div>
   <div class="topbar">
     <button class="btn-sm primary" id="btnConn">連線 BLE</button>
