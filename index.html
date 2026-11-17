@@ -44,11 +44,11 @@
     .gengar-wallpaper {
       position: absolute; inset: 0;
       background-size: cover; background-position: center;
-      opacity: 0.42; transition: background-image 0.2s ease;
+      opacity: 0.85; transition: background-image 0.2s ease;
     }
     .gengar-vignette {
       position: absolute; inset: 0;
-      background: radial-gradient(circle at center, rgba(18, 11, 30, 0.35) 0%, rgba(18, 11, 30, 0.82) 100%);
+      background: radial-gradient(circle at center, rgba(18, 11, 30, 0.08) 0%, rgba(18, 11, 30, 0.55) 100%);
     }
     .gengar-crest {
       position: absolute; right: 12px; bottom: 8px;
@@ -62,7 +62,7 @@
     .topbar, .stage { position: relative; z-index: 1; }
     .topbar {
       display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-      background: var(--panel); border: 1px solid var(--border);
+      background: rgba(24, 14, 42, 0.52); border: 1px solid var(--border);
       border-radius: 10px; padding: 5px 8px;
       flex-shrink: 0;
     }
@@ -118,11 +118,10 @@
     .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
     .pad-box {
       position: relative;
-      background: rgba(24, 14, 42, 0.72);
-      backdrop-filter: blur(6px);
-      border: 1px solid var(--border); border-radius: 12px;
+      background: rgba(18, 11, 30, 0.14);
+      border: 1px solid rgba(192, 132, 252, 0.35); border-radius: 12px;
       padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 0;
-      box-shadow: 0 6px 24px rgba(10, 4, 20, 0.45), inset 0 1px 0 rgba(216, 180, 254, 0.12);
+      box-shadow: 0 6px 24px rgba(10, 4, 20, 0.35), inset 0 1px 0 rgba(216, 180, 254, 0.12);
     }
     .pad-box::before, .pad-box::after {
       content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
@@ -136,8 +135,9 @@
     .panel-title { font-size: 11px; color: var(--muted); font-weight: 600; margin-right: 2px; }
     .seg-btn {
       flex: 1; min-width: 44px; padding: 6px 6px; border-radius: 7px;
-      border: 1px solid var(--border); background: #271840; color: var(--muted);
+      border: 1px solid var(--border); background: rgba(39, 24, 64, 0.42); color: var(--muted);
       font-size: 12px; font-weight: 700; cursor: pointer; text-align: center;
+      text-shadow: 0 1px 3px #000;
     }
     .seg-btn.on { background: linear-gradient(135deg, #7c3aed, #9333ea); border-color: var(--accent-glow); color: #fff; box-shadow: 0 0 10px rgba(168, 85, 247, 0.35); }
     .seg-btn.nudge-on { background: #a21caf; border-color: #f472b6; color: #fff; box-shadow: 0 0 10px rgba(244, 114, 182, 0.35); }
@@ -165,14 +165,14 @@
       grid-column: 1 / -1;
     }
     .pad-btn {
-      border-radius: 12px; border: 2px solid var(--border);
-      background: linear-gradient(180deg, rgba(46, 27, 78, 0.78), rgba(26, 15, 45, 0.86));
-      backdrop-filter: blur(6px);
+      border-radius: 12px; border: 1.5px solid rgba(192, 132, 252, 0.52);
+      background: rgba(24, 12, 44, 0.26);
       color: var(--text);
       font-size: clamp(14px, 2.5vw, 19px); font-weight: 700; cursor: pointer;
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
       min-height: 0; padding: 4px;
-      box-shadow: inset 0 1px 0 rgba(216, 180, 254, 0.16);
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(18, 11, 30, 0.9);
+      box-shadow: inset 0 1px 0 rgba(216, 180, 254, 0.18);
       transition: transform 0.04s, background 0.04s, box-shadow 0.04s;
     }
     .auxpad.m3-only .pad-btn,
@@ -180,16 +180,16 @@
       font-size: clamp(18px, 3.2vw, 26px);
       gap: 6px;
     }
-    .pad-btn small { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 500; }
+    .pad-btn small { font-size: 11px; color: #e9d5ff; font-family: monospace; font-weight: 500; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95); }
     .pad-btn.active {
-      background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(192, 38, 211, 0.92));
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.62), rgba(192, 38, 211, 0.62));
       border-color: var(--accent-glow);
       box-shadow: 0 0 18px rgba(232, 121, 249, 0.65);
       transform: scale(0.97);
     }
     .pad-btn.stop-center {
-      background: linear-gradient(180deg, rgba(92, 16, 36, 0.88), rgba(46, 10, 20, 0.94));
-      border-color: #ef4444;
+      background: rgba(92, 16, 36, 0.42);
+      border-color: rgba(239, 68, 68, 0.85);
       box-shadow: 0 0 12px rgba(239, 68, 68, 0.35), inset 0 0 14px rgba(239, 68, 68, 0.3);
       font-size: clamp(13px, 2.2vw, 16px);
     }
@@ -877,11 +877,12 @@ function applyBgArt() {
   const crest = document.getElementById("gengarCrest");
   const isOfficial = art === "gengar_bg.png";
   wp.style.backgroundImage = isOfficial ? "none" : `url("./${art}")`;
+  crest.style.display = isOfficial ? "block" : "none";
   crest.style.width = isOfficial ? "min(56vw, 360px)" : "";
   crest.style.right = isOfficial ? "50%" : "";
   crest.style.bottom = isOfficial ? "50%" : "";
   crest.style.transform = isOfficial ? "translate(50%, 50%)" : "";
-  crest.style.opacity = isOfficial ? "0.24" : "";
+  crest.style.opacity = isOfficial ? "0.75" : "";
 }
 applyBgArt();
 
