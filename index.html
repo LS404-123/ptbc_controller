@@ -415,7 +415,6 @@ let wakeLock = null;
 let driveFast = true; // true=快 (100%), false=慢 (60%, 30ms ON / 20ms OFF @ 20Hz)
 let nudgeMode = false; // 微動模式: 點一下只轉設定毫秒數
 let tickPhase = 0;
-let lastTickOut = -1;
 
 // 分開追蹤移動 (M1/M2) 與機構 (M3/M4)，讓移動降速時機構仍保持 100% 扭力
 const activeDrive = new Map();
@@ -457,28 +456,47 @@ function updateTxUI() {
   document.getElementById("txHex").textContent = "TX: 0x" + combined.toString(16).padStart(2, "0").toUpperCase();
 }
 
-let pendingSend = null;
+let desiredByte = 0;
+let ackedByte = -1;
+let forceNextTx = false;
+let confirmTimer = null;
 
-async function sendByte(val, fast = false, force = false) {
-  if (!txChar) return;
-  if (inFlight) {
-    if (force) pendingSend = { val, fast }; // 不丟失按鍵/停機封包，等前一個完成後立刻補送最新值
-    return;
-  }
+async function pumpTx() {
+  if (!txChar || inFlight) return;
+  if (!forceNextTx && desiredByte === ackedByte) return;
   inFlight = true;
+  const val = desiredByte;
+  forceNextTx = false;
   try {
-    if (fast) await txChar.writeValueWithoutResponse(new Uint8Array([val]));
-    else await txChar.writeValueWithResponse(new Uint8Array([val]));
+    await txChar.writeValueWithResponse(new Uint8Array([val]));
+    ackedByte = val;
   } catch {
-    try { await txChar.writeValueWithoutResponse(new Uint8Array([val])); } catch {}
+    try {
+      await txChar.writeValueWithoutResponse(new Uint8Array([val]));
+      ackedByte = val;
+    } catch {
+      ackedByte = -1; // 下次 tick 自動重送
+    }
   } finally {
     inFlight = false;
-    if (pendingSend) {
-      const next = pendingSend;
-      pendingSend = null;
-      sendByte(next.val, next.fast, true);
+    if (txChar && (forceNextTx || desiredByte !== ackedByte)) {
+      pumpTx();
     }
   }
+}
+
+function sendByte(val, _fast = false, isStateChange = false) {
+  desiredByte = val & 0xff;
+  if (isStateChange) {
+    forceNextTx = true;
+    if (confirmTimer) clearTimeout(confirmTimer);
+    // 35ms 後雙重確認補送一次當前狀態，防止 ZS-040 UART 偶發漏字元
+    confirmTimer = setTimeout(() => {
+      forceNextTx = true;
+      pumpTx();
+    }, 35);
+  }
+  pumpTx();
 }
 
 function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
@@ -721,12 +739,14 @@ function setBleDot(state) {
 
 function cleanup() {
   if (timerId) { clearInterval(timerId); timerId = null; }
+  if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   clearM3Timers();
   txChar = null;
-  pendingSend = null;
+  desiredByte = 0;
+  ackedByte = -1;
+  forceNextTx = false;
   inFlight = false;
-  lastTickOut = -1;
   activeDrive.clear();
   activeAux.clear();
   updateTxUI();
@@ -761,23 +781,20 @@ btnConn.onclick = async () => {
     btnConn.disabled = true;
     btnDisc.disabled = false;
     tickPhase = 0;
-    lastTickOut = -1;
+    desiredByte = 0;
+    ackedByte = -1;
     let hbCount = 0;
     timerId = setInterval(() => {
       const { drive, aux, combined } = computeMasks();
       if (drive === 0 || driveFast) {
+        desiredByte = combined;
         hbCount = (hbCount + 1) % 10;
-        if (hbCount === 1) {
-          lastTickOut = combined;
-          sendByte(combined, false);
-        }
+        if (hbCount === 1) forceNextTx = true; // 100ms 強制心跳
+        pumpTx();
       } else {
-        // 慢速 60% @ 20Hz (50ms 週期內 30ms ON / 20ms OFF)，僅在電位切換邊緣送出 BLE 避免塞車
-        const out = (tickPhase < 3 ? drive : 0) | aux;
-        if (out !== lastTickOut) {
-          lastTickOut = out;
-          sendByte(out, true);
-        }
+        // 慢速 60% @ 20Hz (30ms ON / 20ms OFF)，只有真的送出成功 ackedByte 才會更新，絕不漏包
+        desiredByte = (tickPhase < 3 ? drive : 0) | aux;
+        pumpTx();
         tickPhase = (tickPhase + 1) % 5;
       }
     }, 10);
