@@ -342,10 +342,6 @@
             <span>點放保底時間 (ms)：</span>
             <input type="number" id="numMinHoldMs" min="0" max="250" step="10" style="width:84px;" />
           </label>
-          <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
-            <span>反向煞車脈衝 (ms，0=關)：</span>
-            <input type="number" id="numBrakeMs" min="0" max="150" step="5" style="width:84px;" />
-          </label>
           <h4 style="margin:6px 0 2px; font-size:13px;">其他馬達 Bit 映射</h4>
           <div id="mapRows"></div>
         </div>
@@ -420,7 +416,6 @@ const DEFAULT_SETTINGS = {
   bgArt: "gengar_art1.jpg",
   nudgeMs: 60,
   minHoldMs: 70, // 快速點放最短保底輸出時間，確保 45ms 雙重確認補送有時間觸發且馬達動得起來
-  brakeMs: 25, // 放開移動鍵後的短反向煞車脈衝 (0 = 關閉)，用來抵銷車體慣性滑行
   ptOnly: true,
   m3p: { label: "M3 正轉 (A+)", mode: "hold", pulseMs: 250 },
   m3n: { label: "M3 反轉 (A-)", mode: "hold", pulseMs: 250 },
@@ -436,25 +431,7 @@ function loadSettings() {
   };
 }
 
-function normalizeKeyMap(raw) {
-  const used = new Set();
-  const dupKeys = [];
-  const out = { ...raw };
-  for (const k of Object.keys(DEFAULT_MAP)) {
-    const v = Number(out[k]);
-    if ((v & (v - 1)) === 0 && v >= 1 && v <= 128 && !used.has(v)) {
-      used.add(v);
-      out[k] = v;
-    } else {
-      dupKeys.push(k);
-    }
-  }
-  const free = [1, 2, 4, 8, 16, 32, 64, 128].filter((b) => !used.has(b));
-  dupKeys.forEach((k, i) => { out[k] = free[i]; });
-  return out;
-}
-
-let keyMap = normalizeKeyMap(loadJSON(STORAGE_KEY, DEFAULT_MAP));
+let keyMap = loadJSON(STORAGE_KEY, DEFAULT_MAP);
 let uiSettings = loadSettings();
 let mode = "drive"; // "drive" | "raw"
 let device = null;
@@ -462,25 +439,9 @@ let txChar = null;
 let timerId = null;
 let inFlight = false;
 let wakeLock = null;
-let driveFast = true; // true=快 (100%), false=慢 (40%, 40ms ON / 60ms OFF @ 10Hz)
+let driveFast = true; // true=快 (100%), false=慢 (60%, 30ms ON / 20ms OFF @ 20Hz)
 let nudgeMode = false; // 微動模式: 點一下只轉設定毫秒數
 let tickPhase = 0;
-let brakeMask = 0;
-let brakeTimer = null;
-
-function clearBrake() {
-  if (brakeTimer) { clearTimeout(brakeTimer); brakeTimer = null; }
-  brakeMask = 0;
-}
-
-function invertDriveBits(mask) {
-  let rev = 0;
-  if (mask & keyMap.m1p) rev |= keyMap.m1n;
-  if (mask & keyMap.m1n) rev |= keyMap.m1p;
-  if (mask & keyMap.m2p) rev |= keyMap.m2n;
-  if (mask & keyMap.m2n) rev |= keyMap.m2p;
-  return guardPairs(rev);
-}
 
 // 分開追蹤移動 (M1/M2) 與機構 (M3/M4)，讓移動降速時機構仍保持 100% 扭力
 const activeDrive = new Map();
@@ -513,9 +474,8 @@ function computeMasks() {
   for (const bits of activeDrive.values()) d |= bits;
   let a = 0;
   for (const bits of activeAux.values()) a |= bits;
-  const effDrive = d || brakeMask;
-  const combined = guardPairs(effDrive | a);
-  return { drive: guardPairs(effDrive) & combined, aux: guardPairs(a) & combined, combined };
+  const combined = guardPairs(d | a);
+  return { drive: guardPairs(d) & combined, aux: guardPairs(a) & combined, combined };
 }
 
 function updateTxUI() {
@@ -578,40 +538,6 @@ rttPill.onclick = () => {
   if (lastAckedCmd !== null) updateRttUI(lastAckedCmd, lastAckedRtt, true);
 };
 
-let txMethod = null;
-
-async function writeBleByte(char, buf) {
-  const withTimeout = (p, ms = 1000) => {
-    let tid;
-    return Promise.race([
-      Promise.resolve(p),
-      new Promise((_, rej) => { tid = setTimeout(() => rej(new Error("BLE write timeout")), ms); }),
-    ]).finally(() => clearTimeout(tid));
-  };
-  const candidates = ["writeValueWithResponse", "writeValue", "writeValueWithoutResponse"].filter(
-    (k) => typeof char[k] === "function"
-  );
-  if (txMethod && candidates.includes(txMethod)) {
-    try {
-      await withTimeout(char[txMethod](buf));
-      return;
-    } catch {
-      txMethod = null;
-    }
-  }
-  let lastErr;
-  for (const method of candidates) {
-    try {
-      await withTimeout(char[method](buf));
-      txMethod = method;
-      return;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error("No BLE write method");
-}
-
 async function pumpTx() {
   if (!txChar || inFlight) return;
   const fromQueue = cmdQueue.length > 0;
@@ -623,7 +549,11 @@ async function pumpTx() {
   const t0 = performance.now();
   try {
     const buf = new Uint8Array([val]);
-    await writeBleByte(txChar, buf);
+    if (txChar.writeValueWithResponse) {
+      await txChar.writeValueWithResponse(buf);
+    } else {
+      await txChar.writeValue(buf);
+    }
     ackedByte = val;
     if (!isHeartbeatOnly || lastAckedCmd === null) {
       if (val !== 0 || fromQueue) lastAckedCmd = val;
@@ -666,26 +596,8 @@ function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
     if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
     if (minHoldTimer) { clearTimeout(minHoldTimer); minHoldTimer = null; }
     if (!targetMap.has(id)) return;
-    const prevBits = targetMap.get(id) || 0;
     targetMap.delete(id);
     el.classList.remove("active");
-    const bMs = Math.max(0, Math.min(150, Number(uiSettings.brakeMs) || 0));
-    if (targetMap === activeDrive && activeDrive.size === 0 && bMs > 0) {
-      const rev = invertDriveBits(prevBits);
-      if (rev) {
-        clearBrake();
-        brakeMask = rev;
-        updateTxUI();
-        sendByte(computeMasks().combined, true, true);
-        brakeTimer = setTimeout(() => {
-          brakeTimer = null;
-          brakeMask = 0;
-          updateTxUI();
-          sendByte(computeMasks().combined, true, true);
-        }, bMs);
-        return;
-      }
-    }
     updateTxUI();
     sendByte(computeMasks().combined, true, true);
   };
@@ -697,7 +609,6 @@ function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
     if (e.pointerId !== undefined) {
       try { el.setPointerCapture(e.pointerId); } catch {}
     }
-    if (targetMap === activeDrive) clearBrake();
     downAt = performance.now();
     targetMap.set(id, getBits());
     el.classList.add("active");
@@ -814,7 +725,6 @@ function makePadBtn(label, sub, id, getBits, targetMap, allowNudge = false, extr
 
 function renderStage() {
   clearM3Timers();
-  clearBrake();
   m3Buttons.clear();
   activeDrive.clear();
   activeAux.clear();
@@ -843,7 +753,7 @@ function renderStage() {
   speedBar.innerHTML = `<span class="panel-title">移動速度</span>`;
   [
     { fast: true, label: "快 100%" },
-    { fast: false, label: "慢 40%" },
+    { fast: false, label: "慢 60%" },
   ].forEach(({ fast, label }) => {
     const b = document.createElement("button");
     b.className = "seg-btn" + (driveFast === fast ? " on" : "");
@@ -884,7 +794,6 @@ function renderStage() {
       b.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         clearM3Timers();
-        clearBrake();
         activeDrive.clear();
         activeAux.clear();
         document.querySelectorAll(".pad-btn.active").forEach((el) => el.classList.remove("active"));
@@ -939,9 +848,7 @@ function cleanup() {
   if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   clearM3Timers();
-  clearBrake();
   txChar = null;
-  txMethod = null;
   cmdQueue.length = 0;
   desiredByte = 0;
   ackedByte = -1;
@@ -970,11 +877,7 @@ btnConn.onclick = async () => {
     const server = await device.gatt.connect();
     const svc = await server.getPrimaryService(SVC_UUID);
     txChar = await svc.getCharacteristic(CHR_UUID);
-    txMethod = null;
-    await Promise.race([
-      txChar.startNotifications().catch(() => {}),
-      new Promise((r) => setTimeout(r, 800)),
-    ]);
+    await txChar.startNotifications().catch(() => {});
 
     if (navigator.wakeLock) {
       wakeLock = await navigator.wakeLock.request("screen").catch(() => null);
@@ -991,16 +894,16 @@ btnConn.onclick = async () => {
     let hbCount = 0;
     timerId = setInterval(() => {
       const { drive, aux, combined } = computeMasks();
-      if (drive === 0 || driveFast || brakeMask !== 0) {
+      if (drive === 0 || driveFast) {
         desiredByte = combined;
         hbCount = (hbCount + 1) % 10;
         if (hbCount === 1) forceNextTx = true; // 100ms 強制心跳
         pumpTx();
       } else {
-        // 慢速 40% @ 10Hz (40ms ON / 60ms OFF)：避開 15~40ms BLE RTT 擠壓，保留真實 ~40% 佔空比
-        desiredByte = (tickPhase < 4 ? drive : 0) | aux;
+        // 慢速 60% @ 20Hz (30ms ON / 20ms OFF)，只有真的送出成功 ackedByte 才會更新，絕不漏包
+        desiredByte = (tickPhase < 3 ? drive : 0) | aux;
         pumpTx();
-        tickPhase = (tickPhase + 1) % 10;
+        tickPhase = (tickPhase + 1) % 5;
       }
     }, 10);
   } catch (err) {
@@ -1065,7 +968,6 @@ const selBgArt = document.getElementById("selBgArt");
 const selAuxLayout = document.getElementById("selAuxLayout");
 const numNudgeMs = document.getElementById("numNudgeMs");
 const numMinHoldMs = document.getElementById("numMinHoldMs");
-const numBrakeMs = document.getElementById("numBrakeMs");
 const m3pLabel = document.getElementById("m3pLabel");
 const m3pBit = document.getElementById("m3pBit");
 const m3pMode = document.getElementById("m3pMode");
@@ -1100,26 +1002,7 @@ document.getElementById("btnSwapM3Bits").onclick = () => {
   const tmp = m3pBit.value;
   m3pBit.value = m3nBit.value;
   m3nBit.value = tmp;
-  m3pBit.dataset.prevVal = m3pBit.value;
-  m3nBit.dataset.prevVal = m3nBit.value;
 };
-
-function bindBitSwapSelects() {
-  const selects = [m3pBit, m3nBit, ...mapRows.querySelectorAll("select")];
-  selects.forEach((s) => { s.dataset.prevVal = s.value; });
-  selects.forEach((sel) => {
-    sel.onchange = () => {
-      const nextVal = sel.value;
-      const prevVal = sel.dataset.prevVal;
-      const other = selects.find((s) => s !== sel && s.value === nextVal);
-      if (other && prevVal) {
-        other.value = prevVal;
-        other.dataset.prevVal = prevVal;
-      }
-      sel.dataset.prevVal = nextVal;
-    };
-  });
-}
 
 function applyBgArt() {
   const art = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
@@ -1142,7 +1025,6 @@ function openSettings() {
   selAuxLayout.value = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   numNudgeMs.value = uiSettings.nudgeMs;
   numMinHoldMs.value = uiSettings.minHoldMs ?? DEFAULT_SETTINGS.minHoldMs;
-  numBrakeMs.value = uiSettings.brakeMs ?? DEFAULT_SETTINGS.brakeMs;
 
   m3pLabel.value = uiSettings.m3p.label;
   m3pBit.innerHTML = bitOptions(keyMap.m3p);
@@ -1163,7 +1045,6 @@ function openSettings() {
       <label>反轉: <select data-key="${kn}">${bitOptions(keyMap[kn])}</select></label>
     </div>
   `).join("");
-  bindBitSwapSelects();
   settingsDialog.hidden = false;
 }
 
@@ -1195,8 +1076,6 @@ document.getElementById("btnSaveSettings").onclick = () => {
   uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
   const rawMinHold = Number(numMinHoldMs.value);
   uiSettings.minHoldMs = Number.isFinite(rawMinHold) ? Math.max(0, Math.min(250, rawMinHold)) : DEFAULT_SETTINGS.minHoldMs;
-  const rawBrake = Number(numBrakeMs.value);
-  uiSettings.brakeMs = Number.isFinite(rawBrake) ? Math.max(0, Math.min(150, rawBrake)) : DEFAULT_SETTINGS.brakeMs;
 
   uiSettings.m3p = {
     label: m3pLabel.value.trim() || DEFAULT_SETTINGS.m3p.label,
