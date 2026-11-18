@@ -142,6 +142,7 @@
     }
     .seg-btn.on { background: linear-gradient(135deg, #7c3aed, #9333ea); border-color: var(--accent-glow); color: #fff; box-shadow: 0 0 10px rgba(168, 85, 247, 0.35); }
     .seg-btn.nudge-on { background: #a21caf; border-color: #f472b6; color: #fff; box-shadow: 0 0 10px rgba(244, 114, 182, 0.35); }
+    .seg-btn.step-on { background: linear-gradient(135deg, #0284c7, #0891b2); border-color: #38bdf8; color: #fff; box-shadow: 0 0 10px rgba(56, 189, 248, 0.4); }
     .pad-grid { flex: 1; display: grid; gap: 8px; min-height: 0; }
     .dpad {
       grid-template-columns: repeat(3, 1fr);
@@ -339,6 +340,11 @@
             <input type="number" id="numNudgeMs" min="20" max="300" step="10" style="width:84px;" />
           </label>
           <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
+            <span>步進單步 / 停頓 (ms)：</span>
+            <input type="number" id="numStepMs" min="20" max="300" step="10" style="width:68px;" />
+            <input type="number" id="numStepPauseMs" min="40" max="500" step="10" style="width:68px;" />
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
             <span>點放保底時間 (ms)：</span>
             <input type="number" id="numMinHoldMs" min="0" max="250" step="10" style="width:84px;" />
           </label>
@@ -419,6 +425,8 @@ const DEFAULT_SETTINGS = {
   auxLayout: "m3m4", // "m3m4" | "m3" | "m3p"
   bgArt: "gengar_art1.jpg",
   nudgeMs: 60,
+  stepMs: 70, // 步進模式單步通電時間 (ms)，一律 100% 扭力突破靜摩擦
+  stepPauseMs: 110, // 步進模式每步煞車後的停頓間隔 (ms)
   minHoldMs: 70, // 快速點放最短保底輸出時間，確保 45ms 雙重確認補送有時間觸發且馬達動得起來
   brakeMs: 25, // 放開移動鍵後的短反向煞車脈衝 (0 = 關閉)，用來抵銷車體慣性滑行
   ptOnly: true,
@@ -464,9 +472,15 @@ let inFlight = false;
 let wakeLock = null;
 let driveFast = true; // true=快 (100%), false=慢 (40%, 40ms ON / 60ms OFF @ 10Hz)
 let nudgeMode = false; // 微動模式: 點一下只轉設定毫秒數
+let stepMode = false; // 步進模式: 點一下走一步，按住固定節奏一步一步連發
 let tickPhase = 0;
 let brakeMask = 0;
 let brakeTimer = null;
+const driveHoldCancelers = new Set();
+
+function clearAllDriveHolds() {
+  for (const fn of driveHoldCancelers) fn();
+}
 
 function clearBrake() {
   if (brakeTimer) { clearTimeout(brakeTimer); brakeTimer = null; }
@@ -630,11 +644,27 @@ function sendByte(val, _fast = false, isStateChange = false) {
 function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
   let nudgeTimer = null;
   let minHoldTimer = null;
+  let stepOffTimer = null;
+  let stepNextTimer = null;
+  let holding = false;
   let downAt = 0;
 
-  const doRelease = () => {
+  const clearTimers = () => {
     if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
     if (minHoldTimer) { clearTimeout(minHoldTimer); minHoldTimer = null; }
+    if (stepOffTimer) { clearTimeout(stepOffTimer); stepOffTimer = null; }
+    if (stepNextTimer) { clearTimeout(stepNextTimer); stepNextTimer = null; }
+  };
+
+  if (targetMap === activeDrive) {
+    driveHoldCancelers.add(() => {
+      holding = false;
+      clearTimers();
+    });
+  }
+
+  const doRelease = () => {
+    clearTimers();
     if (!targetMap.has(id)) return;
     const prevBits = targetMap.get(id) || 0;
     targetMap.delete(id);
@@ -660,12 +690,37 @@ function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
     sendByte(computeMasks().combined, true, true);
   };
 
+  const startStep = () => {
+    clearTimers();
+    clearBrake();
+    downAt = performance.now();
+    targetMap.set(id, getBits());
+    el.classList.add("active");
+    if (navigator.vibrate) navigator.vibrate(10);
+    updateTxUI();
+    sendByte(computeMasks().combined, true, true);
+    const sMs = Math.max(20, Math.min(300, Number(uiSettings.stepMs) || 70));
+    stepOffTimer = setTimeout(() => {
+      stepOffTimer = null;
+      doRelease();
+      if (holding && allowNudge && stepMode) {
+        const bMs = Math.max(0, Math.min(150, Number(uiSettings.brakeMs) || 0));
+        const pMs = Math.max(40, Math.min(500, Number(uiSettings.stepPauseMs) || 110));
+        stepNextTimer = setTimeout(startStep, bMs + pMs);
+      }
+    }, sMs);
+  };
+
   const down = (e) => {
     e.preventDefault();
-    if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
-    if (minHoldTimer) { clearTimeout(minHoldTimer); minHoldTimer = null; }
+    clearTimers();
+    holding = true;
     if (e.pointerId !== undefined) {
       try { el.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (allowNudge && stepMode) {
+      startStep();
+      return;
     }
     if (targetMap === activeDrive) clearBrake();
     downAt = performance.now();
@@ -681,6 +736,12 @@ function bindHoldButton(el, id, getBits, targetMap, allowNudge = false) {
 
   const up = (e) => {
     e.preventDefault();
+    holding = false;
+    if (stepNextTimer) { clearTimeout(stepNextTimer); stepNextTimer = null; }
+    if (allowNudge && stepMode) {
+      // 步進模式若正在跑這一步，讓這一步跑完 sMs 即自動停住（不觸發下一步）
+      return;
+    }
     if (!targetMap.has(id)) return;
     if (minHoldTimer) return;
     const minMs = Number(uiSettings.minHoldMs) || 0;
@@ -784,6 +845,8 @@ function makePadBtn(label, sub, id, getBits, targetMap, allowNudge = false, extr
 
 function renderStage() {
   clearM3Timers();
+  clearAllDriveHolds();
+  driveHoldCancelers.clear();
   clearBrake();
   m3Buttons.clear();
   activeDrive.clear();
@@ -829,11 +892,23 @@ function renderStage() {
   const btnNudge = document.createElement("button");
   btnNudge.className = "seg-btn" + (nudgeMode ? " nudge-on" : "");
   btnNudge.textContent = `微動 ${uiSettings.nudgeMs}ms`;
+  const btnStep = document.createElement("button");
+  btnStep.className = "seg-btn" + (stepMode ? " step-on" : "");
+  btnStep.textContent = `步進 ${uiSettings.stepMs ?? DEFAULT_SETTINGS.stepMs}ms`;
   btnNudge.onclick = () => {
     nudgeMode = !nudgeMode;
+    if (nudgeMode) stepMode = false;
+    btnNudge.classList.toggle("nudge-on", nudgeMode);
+    btnStep.classList.toggle("step-on", stepMode);
+  };
+  btnStep.onclick = () => {
+    stepMode = !stepMode;
+    if (stepMode) nudgeMode = false;
+    btnStep.classList.toggle("step-on", stepMode);
     btnNudge.classList.toggle("nudge-on", nudgeMode);
   };
   speedBar.appendChild(btnNudge);
+  speedBar.appendChild(btnStep);
 
   const dpadGrid = document.createElement("div");
   dpadGrid.className = "pad-grid dpad";
@@ -854,6 +929,7 @@ function renderStage() {
       b.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         clearM3Timers();
+        clearAllDriveHolds();
         clearBrake();
         activeDrive.clear();
         activeAux.clear();
@@ -909,6 +985,7 @@ function cleanup() {
   if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   clearM3Timers();
+  clearAllDriveHolds();
   clearBrake();
   txChar = null;
   cmdQueue.length = 0;
@@ -956,13 +1033,14 @@ btnConn.onclick = async () => {
     let hbCount = 0;
     timerId = setInterval(() => {
       const { drive, aux, combined } = computeMasks();
-      if (drive === 0 || driveFast || brakeMask !== 0) {
+      if (drive === 0 || driveFast || brakeMask !== 0 || nudgeMode || stepMode) {
+        if (drive === 0) tickPhase = 0;
         desiredByte = combined;
         hbCount = (hbCount + 1) % 10;
         if (hbCount === 1) forceNextTx = true; // 100ms 強制心跳
         pumpTx();
       } else {
-        // 慢速 40% @ 10Hz (40ms ON / 60ms OFF)：避開 15~40ms BLE RTT 擠壓，保留真實 ~40% 佔空比
+        // 慢速 40% @ 10Hz (40ms ON / 60ms OFF)：僅一般連續按住模式生效；微動與步進維持 100% 全扭力破靜摩擦
         desiredByte = (tickPhase < 4 ? drive : 0) | aux;
         pumpTx();
         tickPhase = (tickPhase + 1) % 10;
@@ -1029,6 +1107,8 @@ const chkPtOnly = document.getElementById("chkPtOnly");
 const selBgArt = document.getElementById("selBgArt");
 const selAuxLayout = document.getElementById("selAuxLayout");
 const numNudgeMs = document.getElementById("numNudgeMs");
+const numStepMs = document.getElementById("numStepMs");
+const numStepPauseMs = document.getElementById("numStepPauseMs");
 const numMinHoldMs = document.getElementById("numMinHoldMs");
 const numBrakeMs = document.getElementById("numBrakeMs");
 const m3pLabel = document.getElementById("m3pLabel");
@@ -1106,6 +1186,8 @@ function openSettings() {
   selBgArt.value = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
   selAuxLayout.value = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   numNudgeMs.value = uiSettings.nudgeMs;
+  numStepMs.value = uiSettings.stepMs ?? DEFAULT_SETTINGS.stepMs;
+  numStepPauseMs.value = uiSettings.stepPauseMs ?? DEFAULT_SETTINGS.stepPauseMs;
   numMinHoldMs.value = uiSettings.minHoldMs ?? DEFAULT_SETTINGS.minHoldMs;
   numBrakeMs.value = uiSettings.brakeMs ?? DEFAULT_SETTINGS.brakeMs;
 
@@ -1158,6 +1240,8 @@ document.getElementById("btnSaveSettings").onclick = () => {
   uiSettings.bgArt = selBgArt.value;
   uiSettings.auxLayout = selAuxLayout.value;
   uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
+  uiSettings.stepMs = Math.max(20, Math.min(300, Number(numStepMs.value) || 70));
+  uiSettings.stepPauseMs = Math.max(40, Math.min(500, Number(numStepPauseMs.value) || 110));
   const rawMinHold = Number(numMinHoldMs.value);
   uiSettings.minHoldMs = Number.isFinite(rawMinHold) ? Math.max(0, Math.min(250, rawMinHold)) : DEFAULT_SETTINGS.minHoldMs;
   const rawBrake = Number(numBrakeMs.value);
