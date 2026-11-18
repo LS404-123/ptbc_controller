@@ -431,7 +431,25 @@ function loadSettings() {
   };
 }
 
-let keyMap = loadJSON(STORAGE_KEY, DEFAULT_MAP);
+function normalizeKeyMap(raw) {
+  const used = new Set();
+  const dupKeys = [];
+  const out = { ...raw };
+  for (const k of Object.keys(DEFAULT_MAP)) {
+    const v = Number(out[k]);
+    if ((v & (v - 1)) === 0 && v >= 1 && v <= 128 && !used.has(v)) {
+      used.add(v);
+      out[k] = v;
+    } else {
+      dupKeys.push(k);
+    }
+  }
+  const free = [1, 2, 4, 8, 16, 32, 64, 128].filter((b) => !used.has(b));
+  dupKeys.forEach((k, i) => { out[k] = free[i]; });
+  return out;
+}
+
+let keyMap = normalizeKeyMap(loadJSON(STORAGE_KEY, DEFAULT_MAP));
 let uiSettings = loadSettings();
 let mode = "drive"; // "drive" | "raw"
 let device = null;
@@ -1002,7 +1020,26 @@ document.getElementById("btnSwapM3Bits").onclick = () => {
   const tmp = m3pBit.value;
   m3pBit.value = m3nBit.value;
   m3nBit.value = tmp;
+  m3pBit.dataset.prevVal = m3pBit.value;
+  m3nBit.dataset.prevVal = m3nBit.value;
 };
+
+function bindBitSwapSelects() {
+  const selects = [m3pBit, m3nBit, ...mapRows.querySelectorAll("select")];
+  selects.forEach((s) => { s.dataset.prevVal = s.value; });
+  selects.forEach((sel) => {
+    sel.onchange = () => {
+      const nextVal = sel.value;
+      const prevVal = sel.dataset.prevVal;
+      const other = selects.find((s) => s !== sel && s.value === nextVal);
+      if (other && prevVal) {
+        other.value = prevVal;
+        other.dataset.prevVal = prevVal;
+      }
+      sel.dataset.prevVal = nextVal;
+    };
+  });
+}
 
 function applyBgArt() {
   const art = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
@@ -1045,6 +1082,7 @@ function openSettings() {
       <label>反轉: <select data-key="${kn}">${bitOptions(keyMap[kn])}</select></label>
     </div>
   `).join("");
+  bindBitSwapSelects();
   settingsDialog.hidden = false;
 }
 
