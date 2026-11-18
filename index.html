@@ -244,7 +244,9 @@
       display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start;
     }
     .settings-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-    .map-row { display: grid; grid-template-columns: 82px 1fr 1fr; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; }
+    .map-row { display: grid; grid-template-columns: 74px 1fr auto; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; }
+    .rev-btn { padding: 5px 8px; font-size: 11px; white-space: nowrap; }
+    .rev-btn.is-rev { background: #7c3aed; border-color: var(--accent-glow); color: #fff; }
     .m3-cfg-card {
       background: #11151d; border: 1px solid var(--border); border-radius: 10px;
       padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
@@ -352,23 +354,20 @@
             <span>反向煞車脈衝 (ms，0=關)：</span>
             <input type="number" id="numBrakeMs" min="0" max="150" step="5" style="width:84px;" />
           </label>
-          <h4 style="margin:6px 0 2px; font-size:13px;">其他馬達 Bit 映射</h4>
+          <h4 style="margin:6px 0 2px; font-size:13px;">馬達 Bit 配對與方向</h4>
           <div id="mapRows"></div>
         </div>
 
         <div class="settings-col">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
             <h4 style="margin:0; font-size:13px;">M3 機構（A+ / A-）手動設定</h4>
-            <button type="button" class="btn-sm" id="btnSwapM3Bits" style="padding:4px 8px; font-size:12px;">⇄ 互換 A+/A-</button>
+            <button type="button" class="btn-sm" id="btnSwapM3Bits" style="padding:4px 8px; font-size:12px;">⇄ 反轉 M3</button>
           </div>
           <div class="m3-cfg-card">
             <strong style="font-size:12px;">M3 正轉 (A+)</strong>
             <div class="m3-cfg-grid">
               <label>按鈕名稱
                 <input type="text" id="m3pLabel" maxlength="20" placeholder="M3 正轉 (A+)" />
-              </label>
-              <label>Bit 腳位
-                <select id="m3pBit"></select>
               </label>
               <label>觸發模式
                 <select id="m3pMode">
@@ -387,9 +386,6 @@
             <div class="m3-cfg-grid">
               <label>按鈕名稱
                 <input type="text" id="m3nLabel" maxlength="20" placeholder="M3 反轉 (A-)" />
-              </label>
-              <label>Bit 腳位
-                <select id="m3nBit"></select>
               </label>
               <label>觸發模式
                 <select id="m3nMode">
@@ -444,21 +440,43 @@ function loadSettings() {
   };
 }
 
+const BIT_PAIRS = [
+  { id: 0, label: "Bit 0/1 (0x01/0x02)", a: 0x01, b: 0x02, bi: 0, bj: 1 },
+  { id: 1, label: "Bit 2/3 (0x04/0x08)", a: 0x04, b: 0x08, bi: 2, bj: 3 },
+  { id: 2, label: "Bit 4/5 (0x10/0x20)", a: 0x10, b: 0x20, bi: 4, bj: 5 },
+  { id: 3, label: "Bit 6/7 (0x40/0x80)", a: 0x40, b: 0x80, bi: 6, bj: 7 },
+];
+
+const MOTOR_CHANNELS = [
+  ["M1 (左輪)", "m1p", "m1n"],
+  ["M2 (右輪)", "m2p", "m2n"],
+  ["M3 (機構A)", "m3p", "m3n"],
+  ["M4 (機構B)", "m4p", "m4n"],
+];
+
 function normalizeKeyMap(raw) {
-  const used = new Set();
-  const dupKeys = [];
-  const out = { ...raw };
-  for (const k of Object.keys(DEFAULT_MAP)) {
-    const v = Number(out[k]);
-    if ((v & (v - 1)) === 0 && v >= 1 && v <= 128 && !used.has(v)) {
-      used.add(v);
-      out[k] = v;
+  const usedPairs = new Set();
+  const pending = [];
+  const out = {};
+  for (const [, kp, kn] of MOTOR_CHANNELS) {
+    const vp = Number(raw[kp]);
+    const vn = Number(raw[kn]);
+    const pair = BIT_PAIRS.find((p) => (p.a === vp && p.b === vn) || (p.b === vp && p.a === vn))
+      || BIT_PAIRS.find((p) => p.a === vp || p.b === vp);
+    if (pair && !usedPairs.has(pair.id)) {
+      usedPairs.add(pair.id);
+      const rev = pair.b === vp;
+      out[kp] = rev ? pair.b : pair.a;
+      out[kn] = rev ? pair.a : pair.b;
     } else {
-      dupKeys.push(k);
+      pending.push([kp, kn]);
     }
   }
-  const free = [1, 2, 4, 8, 16, 32, 64, 128].filter((b) => !used.has(b));
-  dupKeys.forEach((k, i) => { out[k] = free[i]; });
+  const free = BIT_PAIRS.filter((p) => !usedPairs.has(p.id));
+  pending.forEach(([kp, kn], i) => {
+    out[kp] = free[i].a;
+    out[kn] = free[i].b;
+  });
   return out;
 }
 
@@ -1112,26 +1130,22 @@ const numStepPauseMs = document.getElementById("numStepPauseMs");
 const numMinHoldMs = document.getElementById("numMinHoldMs");
 const numBrakeMs = document.getElementById("numBrakeMs");
 const m3pLabel = document.getElementById("m3pLabel");
-const m3pBit = document.getElementById("m3pBit");
 const m3pMode = document.getElementById("m3pMode");
 const m3pPulseMs = document.getElementById("m3pPulseMs");
 const m3nLabel = document.getElementById("m3nLabel");
-const m3nBit = document.getElementById("m3nBit");
 const m3nMode = document.getElementById("m3nMode");
 const m3nPulseMs = document.getElementById("m3nPulseMs");
 
-const CHANNELS = [
-  ["M1 (左輪)", "m1p", "m1n"],
-  ["M2 (右輪)", "m2p", "m2n"],
-  ["M4 (機構B)", "m4p", "m4n"],
-];
+function pairOptions(selectedId) {
+  return BIT_PAIRS.map((p) =>
+    `<option value="${p.id}" ${p.id === selectedId ? "selected" : ""}>${p.label}</option>`
+  ).join("");
+}
 
-function bitOptions(selected) {
-  return Array.from({ length: 8 }, (_, i) => {
-    const v = 1 << i;
-    const hex = "0x" + v.toString(16).padStart(2, "0").toUpperCase();
-    return `<option value="${v}" ${v === selected ? "selected" : ""}>Bit ${i} (${hex})</option>`;
-  }).join("");
+function syncRevBtnLabel(btn, pairId, rev) {
+  const p = BIT_PAIRS[pairId] || BIT_PAIRS[0];
+  btn.textContent = rev ? `⇄ 反向 (${p.bj}+/${p.bi}-)` : `⇄ 正向 (${p.bi}+/${p.bj}-)`;
+  btn.classList.toggle("is-rev", rev);
 }
 
 function syncPulseInputs() {
@@ -1142,26 +1156,35 @@ m3pMode.onchange = syncPulseInputs;
 m3nMode.onchange = syncPulseInputs;
 
 document.getElementById("btnSwapM3Bits").onclick = () => {
-  const tmp = m3pBit.value;
-  m3pBit.value = m3nBit.value;
-  m3nBit.value = tmp;
-  m3pBit.dataset.prevVal = m3pBit.value;
-  m3nBit.dataset.prevVal = m3nBit.value;
+  const m3Btn = mapRows.querySelector('.rev-btn[data-kp="m3p"]');
+  if (m3Btn) m3Btn.click();
 };
 
-function bindBitSwapSelects() {
-  const selects = [m3pBit, m3nBit, ...mapRows.querySelectorAll("select")];
+function bindMotorPairRows() {
+  const rows = [...mapRows.querySelectorAll(".map-row")];
+  const selects = rows.map((r) => r.querySelector("select"));
   selects.forEach((s) => { s.dataset.prevVal = s.value; });
-  selects.forEach((sel) => {
+  rows.forEach((row) => {
+    const sel = row.querySelector("select");
+    const btn = row.querySelector(".rev-btn");
     sel.onchange = () => {
       const nextVal = sel.value;
       const prevVal = sel.dataset.prevVal;
-      const other = selects.find((s) => s !== sel && s.value === nextVal);
-      if (other && prevVal) {
-        other.value = prevVal;
-        other.dataset.prevVal = prevVal;
+      const otherRow = rows.find((r) => r !== row && r.querySelector("select").value === nextVal);
+      if (otherRow && prevVal !== undefined) {
+        const otherSel = otherRow.querySelector("select");
+        const otherBtn = otherRow.querySelector(".rev-btn");
+        otherSel.value = prevVal;
+        otherSel.dataset.prevVal = prevVal;
+        syncRevBtnLabel(otherBtn, Number(prevVal), otherBtn.dataset.rev === "1");
       }
       sel.dataset.prevVal = nextVal;
+      syncRevBtnLabel(btn, Number(nextVal), btn.dataset.rev === "1");
+    };
+    btn.onclick = () => {
+      const rev = btn.dataset.rev !== "1";
+      btn.dataset.rev = rev ? "1" : "0";
+      syncRevBtnLabel(btn, Number(sel.value), rev);
     };
   });
 }
@@ -1192,25 +1215,28 @@ function openSettings() {
   numBrakeMs.value = uiSettings.brakeMs ?? DEFAULT_SETTINGS.brakeMs;
 
   m3pLabel.value = uiSettings.m3p.label;
-  m3pBit.innerHTML = bitOptions(keyMap.m3p);
   m3pMode.value = uiSettings.m3p.mode;
   m3pPulseMs.value = uiSettings.m3p.pulseMs;
 
   m3nLabel.value = uiSettings.m3n.label;
-  m3nBit.innerHTML = bitOptions(keyMap.m3n);
   m3nMode.value = uiSettings.m3n.mode;
   m3nPulseMs.value = uiSettings.m3n.pulseMs;
 
   syncPulseInputs();
 
-  mapRows.innerHTML = CHANNELS.map(([name, kp, kn]) => `
-    <div class="map-row">
-      <strong>${name}</strong>
-      <label>正轉: <select data-key="${kp}">${bitOptions(keyMap[kp])}</select></label>
-      <label>反轉: <select data-key="${kn}">${bitOptions(keyMap[kn])}</select></label>
-    </div>
-  `).join("");
-  bindBitSwapSelects();
+  const normMap = normalizeKeyMap(keyMap);
+  mapRows.innerHTML = MOTOR_CHANNELS.map(([name, kp, kn]) => {
+    const p = BIT_PAIRS.find((x) => x.a === normMap[kp] || x.b === normMap[kp]) || BIT_PAIRS[0];
+    const rev = normMap[kp] === p.b;
+    return `
+      <div class="map-row">
+        <strong>${name}</strong>
+        <select data-kp="${kp}" data-kn="${kn}">${pairOptions(p.id)}</select>
+        <button type="button" class="btn-sm rev-btn${rev ? " is-rev" : ""}" data-kp="${kp}" data-rev="${rev ? "1" : "0"}">${rev ? `⇄ 反向 (${p.bj}+/${p.bi}-)` : `⇄ 正向 (${p.bi}+/${p.bj}-)`}</button>
+      </div>
+    `;
+  }).join("");
+  bindMotorPairRows();
   settingsDialog.hidden = false;
 }
 
@@ -1258,10 +1284,13 @@ document.getElementById("btnSaveSettings").onclick = () => {
     pulseMs: Math.max(20, Math.min(5000, Number(m3nPulseMs.value) || 250)),
   };
 
-  keyMap.m3p = Number(m3pBit.value);
-  keyMap.m3n = Number(m3nBit.value);
-  mapRows.querySelectorAll("select").forEach((sel) => {
-    keyMap[sel.dataset.key] = Number(sel.value);
+  mapRows.querySelectorAll(".map-row").forEach((row) => {
+    const sel = row.querySelector("select");
+    const btn = row.querySelector(".rev-btn");
+    const p = BIT_PAIRS[Number(sel.value)] || BIT_PAIRS[0];
+    const rev = btn.dataset.rev === "1";
+    keyMap[sel.dataset.kp] = rev ? p.b : p.a;
+    keyMap[sel.dataset.kn] = rev ? p.a : p.b;
   });
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keyMap));
