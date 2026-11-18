@@ -578,6 +578,40 @@ rttPill.onclick = () => {
   if (lastAckedCmd !== null) updateRttUI(lastAckedCmd, lastAckedRtt, true);
 };
 
+let txMethod = null;
+
+async function writeBleByte(char, buf) {
+  const withTimeout = (p, ms = 1000) => {
+    let tid;
+    return Promise.race([
+      Promise.resolve(p),
+      new Promise((_, rej) => { tid = setTimeout(() => rej(new Error("BLE write timeout")), ms); }),
+    ]).finally(() => clearTimeout(tid));
+  };
+  const candidates = ["writeValueWithResponse", "writeValue", "writeValueWithoutResponse"].filter(
+    (k) => typeof char[k] === "function"
+  );
+  if (txMethod && candidates.includes(txMethod)) {
+    try {
+      await withTimeout(char[txMethod](buf));
+      return;
+    } catch {
+      txMethod = null;
+    }
+  }
+  let lastErr;
+  for (const method of candidates) {
+    try {
+      await withTimeout(char[method](buf));
+      txMethod = method;
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("No BLE write method");
+}
+
 async function pumpTx() {
   if (!txChar || inFlight) return;
   const fromQueue = cmdQueue.length > 0;
@@ -589,11 +623,7 @@ async function pumpTx() {
   const t0 = performance.now();
   try {
     const buf = new Uint8Array([val]);
-    if (txChar.writeValueWithResponse) {
-      await txChar.writeValueWithResponse(buf);
-    } else {
-      await txChar.writeValue(buf);
-    }
+    await writeBleByte(txChar, buf);
     ackedByte = val;
     if (!isHeartbeatOnly || lastAckedCmd === null) {
       if (val !== 0 || fromQueue) lastAckedCmd = val;
@@ -911,6 +941,7 @@ function cleanup() {
   clearM3Timers();
   clearBrake();
   txChar = null;
+  txMethod = null;
   cmdQueue.length = 0;
   desiredByte = 0;
   ackedByte = -1;
@@ -939,7 +970,11 @@ btnConn.onclick = async () => {
     const server = await device.gatt.connect();
     const svc = await server.getPrimaryService(SVC_UUID);
     txChar = await svc.getCharacteristic(CHR_UUID);
-    await txChar.startNotifications().catch(() => {});
+    txMethod = null;
+    await Promise.race([
+      txChar.startNotifications().catch(() => {}),
+      new Promise((r) => setTimeout(r, 800)),
+    ]);
 
     if (navigator.wakeLock) {
       wakeLock = await navigator.wakeLock.request("screen").catch(() => null);
