@@ -428,7 +428,7 @@ const DEFAULT_SETTINGS = {
   stepMs: 70, // 步進模式單步通電時間 (ms)，一律 100% 扭力突破靜摩擦
   stepPauseMs: 110, // 步進模式每步煞車後的停頓間隔 (ms)
   minHoldMs: 70, // 快速點放最短保底輸出時間，確保 45ms 雙重確認補送有時間觸發且馬達動得起來
-  brakeMs: 25, // 放開移動鍵後的短反向煞車脈衝 (0 = 關閉)，用來抵銷車體慣性滑行
+  brakeMs: 15, // 放開移動鍵後的短反向煞車脈衝 (0 = 關閉)，用來抵銷車體慣性滑行
   ptOnly: true,
   m3p: { label: "M3 正轉 (A+)", mode: "hold", pulseMs: 250 },
   m3n: { label: "M3 反轉 (A-)", mode: "hold", pulseMs: 250 },
