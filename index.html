@@ -116,7 +116,7 @@
     .spacer { flex: 1; }
 
     /* 主操控區 */
-    .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
+    .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; touch-action: none; }
     .pad-box {
       position: relative;
       background: rgba(18, 11, 30, 0.14);
@@ -139,6 +139,7 @@
       border: 1px solid var(--border); background: rgba(39, 24, 64, 0.42); color: var(--muted);
       font-size: 12px; font-weight: 700; cursor: pointer; text-align: center;
       text-shadow: 0 1px 3px #000;
+      touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none;
     }
     .seg-btn.on { background: linear-gradient(135deg, #7c3aed, #9333ea); border-color: var(--accent-glow); color: #fff; box-shadow: 0 0 10px rgba(168, 85, 247, 0.35); }
     .seg-btn.nudge-on { background: #a21caf; border-color: #f472b6; color: #fff; box-shadow: 0 0 10px rgba(244, 114, 182, 0.35); }
@@ -175,7 +176,7 @@
       min-height: 0; padding: 4px;
       text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(18, 11, 30, 0.9);
       box-shadow: inset 0 1px 0 rgba(216, 180, 254, 0.18);
-      transition: transform 0.04s, background 0.04s, box-shadow 0.04s;
+      touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none;
     }
     .auxpad.m3-only .pad-btn,
     .auxpad.m3-plus-only .pad-btn {
@@ -216,6 +217,7 @@
         height: 100vw;
         transform-origin: top left;
         transform: rotate(90deg) translateY(-100%);
+        will-change: transform;
       }
     }
 
@@ -320,6 +322,10 @@
             <input type="checkbox" id="chkPtOnly" style="width:18px; height:18px; flex-shrink:0;" />
             <span><strong>僅掃描 PT 開頭裝置</strong> — 過濾賽場雜訊</span>
           </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+            <input type="checkbox" id="chkFastWrite" style="width:18px; height:18px; flex-shrink:0;" />
+            <span><strong>低延遲無確認寫入</strong> — iOS / Bluefy 推薦降延遲</span>
+          </label>
           <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted);">
             <span><strong style="color:var(--text);">背景圖樣</strong></span>
             <select id="selBgArt">
@@ -417,6 +423,7 @@ const DEFAULT_MAP = {
   m3p: 0x10, m3n: 0x20, // 機構 A (M3)
   m4p: 0x40, m4n: 0x80, // 機構 B (M4)
 };
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const DEFAULT_SETTINGS = {
   auxLayout: "m3m4", // "m3m4" | "m3" | "m3p"
   bgArt: "gengar_art1.jpg",
@@ -426,6 +433,7 @@ const DEFAULT_SETTINGS = {
   minHoldMs: 70, // 快速點放最短保底輸出時間，確保 45ms 雙重確認補送有時間觸發且馬達動得起來
   brakeMs: 15, // 放開移動鍵後的短反向煞車脈衝 (0 = 關閉)，用來抵銷車體慣性滑行
   ptOnly: true,
+  fastWrite: isIOS, // iOS/Bluefy 優先用 WriteWithoutResponse 降延遲，失敗自動降級
   m3p: { label: "M3 正轉 (A+)", mode: "hold", pulseMs: 250 },
   m3n: { label: "M3 反轉 (A-)", mode: "hold", pulseMs: 250 },
 };
@@ -610,6 +618,42 @@ rttPill.onclick = () => {
   if (lastAckedCmd !== null) updateRttUI(lastAckedCmd, lastAckedRtt, true);
 };
 
+let txMethod = null;
+let lastWriteAt = 0;
+
+async function writeBleByte(char, buf) {
+  const withTimeout = (p, ms = 800) => {
+    let tid;
+    return Promise.race([
+      Promise.resolve(p),
+      new Promise((_, rej) => { tid = setTimeout(() => rej(new Error("BLE write timeout")), ms); }),
+    ]).finally(() => clearTimeout(tid));
+  };
+  const order = uiSettings.fastWrite
+    ? ["writeValueWithoutResponse", "writeValueWithResponse", "writeValue"]
+    : ["writeValueWithResponse", "writeValue", "writeValueWithoutResponse"];
+  const candidates = order.filter((k) => typeof char[k] === "function");
+  if (txMethod && candidates.includes(txMethod)) {
+    try {
+      await withTimeout(char[txMethod](buf));
+      return;
+    } catch {
+      txMethod = null;
+    }
+  }
+  let lastErr;
+  for (const method of candidates) {
+    try {
+      await withTimeout(char[method](buf));
+      txMethod = method;
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("No BLE write method");
+}
+
 async function pumpTx() {
   if (!txChar || inFlight) return;
   const fromQueue = cmdQueue.length > 0;
@@ -621,15 +665,12 @@ async function pumpTx() {
   const t0 = performance.now();
   try {
     const buf = new Uint8Array([val]);
-    if (txChar.writeValueWithResponse) {
-      await txChar.writeValueWithResponse(buf);
-    } else {
-      await txChar.writeValue(buf);
-    }
+    await writeBleByte(txChar, buf);
+    lastWriteAt = performance.now();
     ackedByte = val;
     if (!isHeartbeatOnly || lastAckedCmd === null) {
       if (val !== 0 || fromQueue) lastAckedCmd = val;
-      updateRttUI(val, Math.round(performance.now() - t0), true);
+      updateRttUI(val, Math.round(lastWriteAt - t0), true);
     }
   } catch {
     ackedByte = -1;
@@ -637,8 +678,16 @@ async function pumpTx() {
   } finally {
     inFlight = false;
     if (txChar && (cmdQueue.length > 0 || forceNextTx || desiredByte !== ackedByte)) {
-      if (ackedByte === -1) setTimeout(pumpTx, 25);
-      else pumpTx();
+      if (ackedByte === -1) {
+        setTimeout(pumpTx, 25);
+      } else if (txMethod === "writeValueWithoutResponse") {
+        // 無確認寫入強制留 >=18ms 間隔，避免 CoreBluetooth / 9600bps UART 壅塞
+        const waitMs = Math.max(0, 18 - (performance.now() - lastWriteAt));
+        if (waitMs > 2) setTimeout(pumpTx, waitMs);
+        else pumpTx();
+      } else {
+        pumpTx();
+      }
     }
   }
 }
@@ -946,14 +995,7 @@ function renderStage() {
       const b = makePadBtn(label, sub, null, null, null, false, cls || "");
       b.addEventListener("pointerdown", (e) => {
         e.preventDefault();
-        clearM3Timers();
-        clearAllDriveHolds();
-        clearBrake();
-        activeDrive.clear();
-        activeAux.clear();
-        document.querySelectorAll(".pad-btn.active").forEach((el) => el.classList.remove("active"));
-        updateTxUI();
-        sendByte(0, true, true);
+        emergencyStop();
       });
       dpadGrid.appendChild(b);
       return;
@@ -998,6 +1040,22 @@ function setBleDot(state) {
   else if (state === "busy") floatBleDot.classList.add("busy");
 }
 
+function emergencyStop() {
+  clearM3Timers();
+  clearAllDriveHolds();
+  clearBrake();
+  activeDrive.clear();
+  activeAux.clear();
+  document.querySelectorAll(".pad-btn.active").forEach((el) => el.classList.remove("active"));
+  updateTxUI();
+  if (txChar) sendByte(0, true, true);
+}
+
+window.addEventListener("blur", emergencyStop);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) emergencyStop();
+});
+
 function cleanup() {
   if (timerId) { clearInterval(timerId); timerId = null; }
   if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
@@ -1006,6 +1064,7 @@ function cleanup() {
   clearAllDriveHolds();
   clearBrake();
   txChar = null;
+  txMethod = null;
   cmdQueue.length = 0;
   desiredByte = 0;
   ackedByte = -1;
@@ -1023,6 +1082,10 @@ function cleanup() {
 }
 
 btnConn.onclick = async () => {
+  if (!navigator.bluetooth) {
+    statusEl.textContent = isIOS ? "需用 Bluefy 開啟" : "瀏覽器不支援 BLE";
+    return;
+  }
   try {
     const reqOpts = uiSettings.ptOnly
       ? { filters: [{ namePrefix: "PT" }], optionalServices: [SVC_UUID] }
@@ -1034,7 +1097,11 @@ btnConn.onclick = async () => {
     const server = await device.gatt.connect();
     const svc = await server.getPrimaryService(SVC_UUID);
     txChar = await svc.getCharacteristic(CHR_UUID);
-    await txChar.startNotifications().catch(() => {});
+    txMethod = null;
+    await Promise.race([
+      txChar.startNotifications().catch(() => {}),
+      new Promise((r) => setTimeout(r, 800)),
+    ]);
 
     if (navigator.wakeLock) {
       wakeLock = await navigator.wakeLock.request("screen").catch(() => null);
@@ -1065,8 +1132,13 @@ btnConn.onclick = async () => {
       }
     }, 10);
   } catch (err) {
-    statusEl.textContent = "連線失敗";
     cleanup();
+    const msg = String(err?.message || err?.name || "");
+    statusEl.textContent = /denied|permission/i.test(msg)
+      ? "藍牙權限未開"
+      : /cancel|NotFoundError/i.test(msg)
+        ? "未選裝置 / 取消"
+        : "連線失敗";
   }
 };
 
@@ -1122,6 +1194,7 @@ document.getElementById("btnFull").onclick = () => {
 const settingsDialog = document.getElementById("settingsDialog");
 const mapRows = document.getElementById("mapRows");
 const chkPtOnly = document.getElementById("chkPtOnly");
+const chkFastWrite = document.getElementById("chkFastWrite");
 const selBgArt = document.getElementById("selBgArt");
 const selAuxLayout = document.getElementById("selAuxLayout");
 const numNudgeMs = document.getElementById("numNudgeMs");
@@ -1206,6 +1279,7 @@ applyBgArt();
 
 function openSettings() {
   chkPtOnly.checked = uiSettings.ptOnly;
+  chkFastWrite.checked = Boolean(uiSettings.fastWrite);
   selBgArt.value = uiSettings.bgArt || DEFAULT_SETTINGS.bgArt;
   selAuxLayout.value = uiSettings.auxLayout || (uiSettings.m3Only ? "m3" : "m3m4");
   numNudgeMs.value = uiSettings.nudgeMs;
@@ -1263,6 +1337,7 @@ document.getElementById("btnResetSettings").onclick = () => {
 
 document.getElementById("btnSaveSettings").onclick = () => {
   uiSettings.ptOnly = chkPtOnly.checked;
+  uiSettings.fastWrite = chkFastWrite.checked;
   uiSettings.bgArt = selBgArt.value;
   uiSettings.auxLayout = selAuxLayout.value;
   uiSettings.nudgeMs = Math.max(20, Math.min(300, Number(numNudgeMs.value) || 60));
