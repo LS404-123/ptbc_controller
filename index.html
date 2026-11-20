@@ -412,8 +412,8 @@
 </div>
 
 <script>
-const SVC_UUID = 0xffe0;
-const CHR_UUID = 0xffe1;
+const SVC_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
+const CHR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb";
 const STORAGE_KEY = "ptbc_a01_keymap_v1";
 
 // 預設映射與介面設定（自動存入 localStorage）
@@ -1133,12 +1133,15 @@ btnConn.onclick = async () => {
     }, 10);
   } catch (err) {
     cleanup();
-    const msg = String(err?.message || err?.name || "");
-    statusEl.textContent = /denied|permission/i.test(msg)
-      ? "藍牙權限未開"
-      : /cancel|NotFoundError/i.test(msg)
-        ? "未選裝置 / 取消"
-        : "連線失敗";
+    const detail = [err?.name, err?.message].filter(Boolean).join(": ");
+    statusEl.title = detail;
+    if (/denied|permission/i.test(detail)) {
+      statusEl.textContent = "藍牙權限未開";
+    } else if (/cancel|NotFoundError/i.test(detail)) {
+      statusEl.textContent = "未選裝置 / 取消";
+    } else {
+      statusEl.textContent = detail ? `失敗: ${detail.slice(0, 32)}` : "連線失敗";
+    }
   }
 };
 
